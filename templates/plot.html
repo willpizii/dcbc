@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col">
+            <h4 class="text-center">We love ergs at DCBC</h4>
+            {{ div[0] | safe }}
+            {{ script[0] | safe }}
+
+            <!-- Form for date selection -->
+            <div class="text-center mb-4">
+                <button class="btn btn-secondary me-2" onclick="setDateRange('2024-10-01', '2025-06-30')" style="background-color: #bb0088; text-color: white;">2024-25 Season</button>
+                <button class="btn btn-secondary me-2" onclick="setDateRange('2024-10-01', '2024-12-15')">Michaelmas</button>
+                <button class="btn btn-secondary me-2" onclick="setDateRange('2025-01-01', '2025-03-15')">Lent</button>
+                <button class="btn btn-secondary me-2" onclick="setDateRange('2024-05-15', '2025-06-30')">Easter</button>
+                <button class="btn btn-light me-2" data-bs-toggle='collapse' data-bs-target='#customDates'>Custom Dates</button>
+                <button class="btn btn-light me-2" data-bs-toggle='collapse' data-bs-target='#oldSeasons'>Previous Seasons</button>
+                <button class="btn btn-light me-2" onclick="setDateRange('2000-01-01', '2040-01-01')">View All</button>
+            </div>
+
+            <!-- Hidden form for custom date selection -->
+            <div class='collapse' id='customDates'>
+                <form id="customDateForm" action='/plot' method='get'>
+                    <div class="row mb-3 py-6">
+                        <div class="col">
+                            <label for="fromDate" class="form-label">From Date</label>
+                            <input type="date" id="fromDate" name="from_date" class="form-control" required>
+                        </div>
+                        <div class="col">
+                            <label for="toDate" class="form-label">To Date</label>
+                            <input type="date" id="toDate" name="to_date" class="form-control" required>
+                        </div>
+                        {% if otherview %}
+                            <div class="col">
+                                <input type="text" id="crsid" name="crsid" value="{{ crsid }}" readonly required hidden>
+                                <input type="text" id="crsid" name="crsid" value="{{ crsid }}" readonly required style="cursor: not-allowed;" disabled>
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col text-center">
+                            <button type="submit" class="btn btn-primary">Submit</button>
+                            <button type="reset" class="btn btn-secondary">Reset</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="collapse" id="oldSeasons">
+                <div class="text-center mb-4">
+                    <button class="btn btn-secondary me-2" onclick="setDateRange('2023-10-01', '2024-06-30')" style="background-color: #bb0088; text-color: white;">2023-34 Season</button>
+                    <button class="btn btn-secondary me-2" onclick="setDateRange('2023-10-01', '2023-12-15')">Michaelmas</button>
+                    <button class="btn btn-secondary me-2" onclick="setDateRange('2024-01-01', '2024-03-15')">Lent</button>
+                    <button class="btn btn-secondary me-2" onclick="setDateRange('2024-05-15', '2024-06-30')">Easter</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function setDateRange(fromDate, toDate) {
+        document.getElementById('fromDate').value = fromDate;
+        document.getElementById('toDate').value = toDate;
+        document.getElementById('customDateForm').submit();
+    }
+</script>
+
+{% endblock %}

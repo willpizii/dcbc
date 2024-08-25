@@ -1,0 +1,65 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-Zenh87qX5JnK2Jl0vWa8Ck2rdkQ2Bzep5IDxbcnCeuOxjzrPF/et3URy9Bv1WTRi" crossorigin="anonymous">
+
+    <!-- <link href="http://cdn.bokeh.org/bokeh/release/bokeh-3.0.1.min.css" rel="stylesheet" type="text/css"> -->
+
+
+    <title>Bokeh Charts</title>
+</head>
+
+<body>
+     <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #bb0088;" class="mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <img src="./static/armarrow.svg" width="80" height="80" alt="">
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    {% if superuser %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('captains') }}"><b>Captains</b></a>
+                        </li>
+                    {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('index') }}">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('club') }}">Club Overview</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('plot') }}">Season</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('data') }}">Data</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    {% block content %}
+
+    {% endblock %}
+
+    <!-- scripts import! -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bokeh/3.4.1/bokeh.min.js"
+        integrity="sha512-iH5rrOjYD1wVVcGRP3MAYcLXOsuDrbf0zPLvAv/H5ehk97HJfbmk9mQ6FDFwDWXiaGdZ9cS7GskmMei2Wc7q0w=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+</body>
+
+</html>

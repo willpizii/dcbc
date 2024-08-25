@@ -1,0 +1,3 @@
+[submodule "python-ucam-webauth"]
+	path = python-ucam-webauth
+	url = https://github.com/danielrichman/python-ucam-webauth.git

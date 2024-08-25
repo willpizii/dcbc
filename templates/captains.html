@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<form method="get" action="{{ url_for('plot') }}">
+    <div class="container-fluid py-4">
+        <h3> Welcome to the Captain's Space </h3>
+        <table>
+            <tr>
+                <td><label for="crsid">CRSID:</label></td>
+                <td><input type="text" id="crsid" name="crsid" required></td>
+            </tr>
+            <tr>
+                <td colspan="2"><input type="submit" value="View"></td>
+            </tr>
+        </table>
+    </div>
+</form>
+
+{% endblock %}

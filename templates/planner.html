@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+
+<style>
+    table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    th, td {
+        border: 1px solid black;
+        padding: 8px;
+        text-align: center;
+    }
+    th {
+        background-color: #f2f2f2;
+    }
+    .day-row {
+        background-color: #e0e0e0;
+        font-weight: bold;
+    }
+    .available {
+        background-color: #98FB98 !important; /* Light green for available */
+    }
+    .not-available {
+        background-color: #FF6347 !important;/* Light red for not available */
+    }
+    .if-needs-be {
+        background-color: #FFFFE0 !important; /* Light yellow for if needs be */
+    }
+    .collapsed {
+        display: none;
+    }
+</style>
+
+<div class="container">
+    <h1 class="my-4">Availability Results</h1>
+    <div class="mb-4">
+        <a id="collapseNotAvailable" class="btn btn-primary">Only 'Available'</a>
+        <a id="collapseOnlyNotAvailable" class="btn btn-secondary">Only 'Available' or 'If Needs Be'</a>
+        <a id="reset" class="btn btn-secondary">Reset</a>
+    </div>
+
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Day/Hour</th>
+                {% for person in availabilities %}
+                    <th>{{ person.name }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody id="results-body">
+            {% for day in days_of_week %}
+                <tr class="day-row">
+                    <td colspan="{{ availabilities|length + 1 }}">{{ day }}</td>
+                </tr>
+                {% for hour in hours_of_day %}
+                    <tr data-hour="{{ hour }}:00" data-day="{{ day }}">
+                        <td>{{ hour }}:00</td>
+                        {% for person in availabilities %}
+                            <td class="{% if day ~ ' ' ~ hour ~ ':00' in person['times']['available'] %}available
+                                        {% elif day ~ ' ' ~ hour ~ ':00' in person['times']['not-available'] %}not-available
+                                        {% elif day ~ ' ' ~ hour ~ ':00' in person['times']['if-needs-be'] %}if-needs-be
+                                        {% endif %}">
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.getElementById('collapseNotAvailable').addEventListener('click', function () {
+            toggleRows('available', false);
+        });
+
+        document.getElementById('collapseOnlyNotAvailable').addEventListener('click', function () {
+            toggleRows('not-available', true);
+        });
+
+        document.getElementById('reset').addEventListener('click', function () {
+            resetRows();
+        });
+
+        function toggleRows(statusClass, exclude) {
+            const rows = document.querySelectorAll('tbody tr:not(.day-row)');
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td:not(:first-child)');  // Exclude the first cell (hour column)
+                let hideRow = false;
+
+                if (!exclude) { // Only 'Available' case
+                    hideRow = Array.from(cells).some(cell => !cell.classList.contains(statusClass));
+                } else { // Only 'Available' or 'If Needs Be' case
+                    hideRow = Array.from(cells).some(cell => cell.classList.contains('not-available'));
+                }
+
+                if (hideRow) {
+                    row.classList.add('collapsed');
+                } else {
+                    row.classList.remove('collapsed');
+                }
+            });
+        }
+
+        function resetRows() {
+            const rows = document.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                row.classList.remove('collapsed');
+            });
+        }
+    });
+
+</script>
+
+{% endblock %}

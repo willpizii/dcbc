@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container-fluid py-4">
+        <div class="row">
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        {% for header in headers %}
+                            <th>{{ header }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                    {% for value in data.values() %}
+                        {% if value not in [None, 'unknown'] and value is not sameas '' %}
+                            <td>{{ value }}</td>
+                        {% else %}
+                            <td>-</td>
+                        {% endif %}
+                    {% endfor %}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="row">
+            <div class="col">
+                {{ div[0] | safe }}
+                {{ script[0] | safe }}
+            </div>
+        </div>
+    </div>
+
+{% endblock %}

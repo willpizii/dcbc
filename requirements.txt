@@ -1,0 +1,10 @@
+Flask
+requests
+pandas
+matplotlib
+numpy==1.26.4
+bokeh
+cryptpandas
+cryptography
+pyotp
+qrcode

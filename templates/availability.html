@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+    table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    th, td {
+        border: 1px solid black;
+        padding: 8px;
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+    }
+    th {
+        background-color: #f2f2f2;
+    }
+    .available {
+        background-color: #98FB98; /* Light green for available */
+    }
+    .not-available {
+        background-color: #FF6F6F; /* Light red for not available */
+    }
+    .if-needs-be {
+        background-color: #FFFFE0; /* Light yellow for if needs be */
+    }
+    .button-group {
+        margin-bottom: 10px;
+    }
+    .active-button {
+        border: 3px solid black; /* Strong black border */
+    }
+    #markAvailable {
+        background-color: #98FB98; /* Match the 'available' cell color */
+        color: black;
+    }
+    #markNotAvailable {
+        background-color: #FF6F6F; /* Match the 'not-available' cell color */
+        color: black;
+    }
+    #markIfNeedsBe {
+        background-color: #FFFFE0; /* Match the 'if-needs-be' cell color */
+        color: black;
+    }
+    button {
+        border: none;
+        padding: 10px;
+        font-size: 16px;
+        cursor: pointer;
+        margin-right: 10px;
+    }
+    /* Ensures proper alignment and spacing */
+    td, th {
+        min-width: 100px;
+    }
+</style>
+
+<h1>Fill your Availability</h1>
+<div class="button-group">
+    <button id="markAvailable" class='active-button'>Mark as Available</button>
+    <button id="markNotAvailable">Mark as Not Available</button>
+    <button id="markIfNeedsBe">Mark as If Needs Be</button>
+</div>
+<form method="POST" id="availabilityForm" action="/submit_availability">
+    <label for="name">Your Name:</label>
+    <input type="text" id="name" name="name" required><br><br>
+
+    <label>Select Times:</label><br>
+    <table id="availabilityTable" border="1">
+        <tr>
+            <th></th>
+            {% for day in days_of_week %}
+                <th>{{ day }}</th>
+            {% endfor %}
+        </tr>
+        {% for hour in hours_of_day %}
+        <tr>
+            <th>{{ hour }}:00</th>
+            {% for day in days_of_week %}
+            <td data-time="{{ day }} {{ hour }}:00" class="available"></td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+    <br>
+    <button type="submit">Submit</button>
+</form>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        let isMouseDown = false;
+        let startCell = null;
+        const markedCells = new Map(); // Map to track cell state
+        const lockedCells = new Set(); // Set to track locked cells
+
+        let markMode = 'available'; // Default mode
+
+        const table = document.getElementById('availabilityTable');
+        const form = document.getElementById('availabilityForm');
+
+        // Initialize all cells with 'available' state
+        document.querySelectorAll('td[data-time]').forEach(cell => {
+            markedCells.set(cell.dataset.time, 'available');
+            cell.classList.add('available');
+        });
+
+        // Event listeners for buttons
+        const buttons = document.querySelectorAll('.button-group button');
+
+        document.getElementById('markAvailable').addEventListener('click', function() {
+            markMode = 'available';
+            highlightButton(this);
+        });
+
+        document.getElementById('markNotAvailable').addEventListener('click', function() {
+            markMode = 'not-available';
+            highlightButton(this);
+        });
+
+        document.getElementById('markIfNeedsBe').addEventListener('click', function() {
+            markMode = 'if-needs-be';
+            highlightButton(this);
+        });
+
+        // Function to highlight the active button
+        function highlightButton(activeButton) {
+            buttons.forEach(button => button.classList.remove('active-button'));
+            activeButton.classList.add('active-button');
+        }
+
+        table.addEventListener('mousedown', function (event) {
+            if (event.target.tagName === 'TD' && event.target.dataset.time) {
+                isMouseDown = true;
+                startCell = event.target;
+                toggleCell(event.target);
+            }
+        });
+
+        table.addEventListener('mouseover', function (event) {
+            if (isMouseDown && event.target.tagName === 'TD' && event.target.dataset.time) {
+                if (startCell) {
+                    if (!lockedCells.has(event.target.dataset.time)) {
+                        selectRectangle(startCell, event.target);
+                    }
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', function () {
+            isMouseDown = false;
+            startCell = null;
+            lockedCells.clear(); // Clear the lockedCells set when mouse is lifted
+        });
+
+        form.addEventListener('submit', function (event) {
+            event.preventDefault(); // Prevent the default form submission
+            const times = [];
+
+            markedCells.forEach((state, time) => {
+                if (state) {
+                    times.push(`${time}|${state}`);
+                }
+            });
+
+            if (times.length === 0) {
+                alert("Please select at least one time slot.");
+                return;
+            }
+
+            const data = {
+                name: form.name.value,
+                times: times
+            };
+
+            console.log("Submitting data:", JSON.stringify(data)); // Debugging: Log the data being sent
+
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", form.action, true);
+            xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+
+            xhr.onload = function () {
+                if (xhr.status === 200) {
+                    window.location.href = xhr.responseURL;
+                } else {
+                    console.error("Submission failed with status:", xhr.status);
+                    console.error("Response text:", xhr.responseText);
+                    alert("An error occurred. Please try again.");
+                }
+            };
+
+            xhr.onerror = function () {
+                console.error("Request failed.");
+                alert("Failed to send data. Please check your network connection.");
+            };
+
+            xhr.send(JSON.stringify(data));
+        });
+
+        function toggleCell(cell) {
+            const time = cell.dataset.time;
+            const currentState = markedCells.get(time);
+
+            if (currentState !== markMode) {
+                markedCells.set(time, markMode);
+                cell.classList.remove('available', 'not-available', 'if-needs-be');
+                cell.classList.add(markMode);
+            }
+        }
+
+        function selectRectangle(start, end) {
+            const startRow = start.parentElement.rowIndex;
+            const startCol = start.cellIndex;
+            const endRow = end.parentElement.rowIndex;
+            const endCol = end.cellIndex;
+
+            // Define the boundaries of the selection
+            const minRow = Math.min(startRow, endRow);
+            const maxRow = Math.max(startRow, endRow);
+            const minCol = Math.min(startCol, endCol);
+            const maxCol = Math.max(startCol, endCol);
+
+            // Iterate through the cells within the defined rectangle
+            for (let i = minRow; i <= maxRow; i++) {
+                for (let j = minCol; j <= maxCol; j++) {
+                    const cell = table.rows[i].cells[j];
+                    if (cell.dataset.time && !lockedCells.has(cell.dataset.time)) {
+                        toggleCell(cell);
+                    }
+                }
+            }
+        }
+    });
+</script>
+
+{% endblock %}

@@ -1,0 +1,47 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-Zenh87qX5JnK2Jl0vWa8Ck2rdkQ2Bzep5IDxbcnCeuOxjzrPF/et3URy9Bv1WTRi" crossorigin="anonymous">
+
+    <!-- <link href="http://cdn.bokeh.org/bokeh/release/bokeh-3.0.1.min.css" rel="stylesheet" type="text/css"> -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bokeh/3.4.1/bokeh.min.js"
+        integrity="sha512-iH5rrOjYD1wVVcGRP3MAYcLXOsuDrbf0zPLvAv/H5ehk97HJfbmk9mQ6FDFwDWXiaGdZ9cS7GskmMei2Wc7q0w=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <title>DCBC Dash</title>
+
+<body>
+     <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #bb0088;" class="mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <img src="{{ url_for('static', filename='armarrow.svg') }}" width="80" height="80" alt="">
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">Welcome</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    <div class="container-fluid py-4">
+        <div class="row">
+            <div class="col">
+                <button class="btn btn-secondary me-2" onclick="window.location.href='/authorize';"  style="background-color: #bb0088; text-color: white;">Connect to Logbook</button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

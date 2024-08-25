@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<form method="post" action="/user_settings">
+    <div class="container-fluid py-4">
+        <table>
+            <tr>
+                <td><label for="crsid">CRSID:</label></td>
+                <td><input type="text" id="crsid" name="crsid" readonly value="{{ personal_data['crsid'] }}" disabled></td>
+            </tr>
+            <tr>
+                <td><label for="first_name">First Name:</label></td>
+                <td><input type="text" id="first_name" name="first_name" readonly value="{{ personal_data['First Name'] }}" disabled></td>
+            </tr>
+            <tr>
+                <td><label for="last_name">Last Name:</label></td>
+                <td><input type="text" id="last_name" name="last_name" readonly value="{{ personal_data['Last Name'] }}" disabled></td>
+            </tr>
+            <tr>
+                <td><label for="logid">Logbook ID:</label></td>
+                <td><input type="text" id="logid" name="logid" readonly value="{{ personal_data['logbook id'] }}" disabled></td>
+            </tr>
+            <tr>
+                <td><label for="color">Color:</label></td>
+                <td><input type="text" id="color" name="color" readonly value="{{ personal_data['color'] }}" disabled style="background-color: {{ personal_data['color'] }}; border: 1px solid #ccc;"></td>
+            </tr>
+            <tr>
+                <td><label for="preferred_name">Preferred Name:</label></td>
+                <td><input type="text" id="preferred_name" name="preferred_name" value="{{ personal_data['Preferred Name'] }}"></td>
+            </tr>
+
+            <tr>
+                <td colspan="2" style="height: 20px; background-color: transparent;"></td>
+            </tr>
+
+            <tr>
+                <td><label for="bowside">Bowside Ability:</label></td>
+                <td><select id="bowside" name="bowside">
+                    <option value="Yes" {% if personal_data['Bowside'] == 'Yes' %}selected{% endif %}>Yes</option>
+                    <option value="Limited" {% if personal_data['Bowside'] == 'Limited' %}selected{% endif %}>Limited</option>
+                    <option value="No" {% if personal_data['Bowside'] == 'No' %}selected{% endif %}>No</option>
+                </select></td>
+            </tr>
+            <tr>
+                <td><label for="strokeside">Strokeside Ability:</label></td>
+                <td><select id="strokeside" name="strokeside">
+                    <option value="Yes" {% if personal_data['Strokeside'] == 'Yes' %}selected{% endif %}>Yes</option>
+                    <option value="Limited" {% if personal_data['Strokeside'] == 'Limited' %}selected{% endif %}>Limited</option>
+                    <option value="No" {% if personal_data['Strokeside'] == 'No' %}selected{% endif %}>No</option>
+                </select></td>
+            </tr>
+            <tr>
+                <td><label for="coxing">Coxing Ability:</label></td>
+                <td><select id="coxing" name="coxing">
+                    <option value="Yes" {% if personal_data['Coxing'] == 'Yes' %}selected{% endif %}>Yes</option>
+                    <option value="Limited" {% if personal_data['Coxing'] == 'Limited' %}selected{% endif %}>Limited</option>
+                    <option value="No" {% if personal_data['Coxing'] == 'No' %}selected{% endif %}>No</option>
+                </select></td>
+            </tr>
+            <tr>
+                <td><label for="sculling">Sculling Ability:</label></td>
+                <td><select id="sculling" name="Sculling">
+                    <option value="Yes" {% if personal_data['Sculling'] == 'Yes' %}selected{% endif %}>Yes</option>
+                    <option value="Limited" {% if personal_data['Sculling'] == 'Limited' %}selected{% endif %}>Limited</option>
+                    <option value="No" {% if personal_data['Sculling'] == 'No' %}selected{% endif %}>No</option>
+                </select></td>
+            </tr>
+            <tr>
+                <td><label for="years_rowing">Years Rowing:</label></td>
+                <td><input type="number" id="years_rowing" name="years_rowing" value="{{ personal_data['Years Rowing'] }}"></td>
+            </tr>
+
+            <tr>
+                <td colspan="2" style="height: 20px; background-color: transparent;"></td>
+            </tr>
+
+            <tr>
+                <td><label for="squad">Squad:</label></td>
+                <td>
+                    <select id="squad" name="squad">
+                        <option value="Mens" {% if personal_data['Squad'] == 'Mens' %}selected{% endif %}>Mens</option>
+                        <option value="Womens" {% if personal_data['Squad'] == 'Womens' %}selected{% endif %}>Womens</option>
+                        <option value="Both" {% if personal_data['Squad'] == 'Both' %}selected{% endif %}>Both</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td><label for="year">Year:</label></td>
+                <td>
+                    <select id="year" name="year">
+                        <option value="1st" {% if personal_data['Year'] == '1st' %}selected{% endif %}>1st</option>
+                        <option value="2nd" {% if personal_data['Year'] == '2nd' %}selected{% endif %}>2nd</option>
+                        <option value="3rd" {% if personal_data['Year'] == '3rd' %}selected{% endif %}>3rd</option>
+                        <option value="4th" {% if personal_data['Year'] == '4th' %}selected{% endif %}>4th</option>
+                        <option value="2nd" {% if personal_data['Year'] == '5th' %}selected{% endif %}>5th</option>
+                        <option value="3rd" {% if personal_data['Year'] == '6th' %}selected{% endif %}>6th</option>
+                        <option value="4th" {% if personal_data['Year'] == '7th' %}selected{% endif %}>7th</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2"><input type="submit" value="Submit"></td>
+            </tr>
+        </table>
+    </div>
+</form>
+
+{% endblock %}
