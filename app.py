@@ -1,38 +1,56 @@
-import requests
-import flask
-from flask import Flask, redirect, Blueprint, request, session, render_template_string, send_file, url_for, make_response, render_template, send_from_directory
-from urllib.parse import urlencode
-import pandas as pd
-import matplotlib.pyplot as plt
-import io
-import getpass
-import numpy as np
-import datetime
-from datetime import time, timedelta, datetime
-import os
-from bokeh.io import output_file, show
-from bokeh.plotting import figure, show
-from bokeh.embed import components
-from bokeh.models import Range1d, LinearAxis, ColumnDataSource, HoverTool, TapTool, CustomJS, FuncTickFormatter, NumeralTickFormatter, CustomJSTickFormatter
-from ucam_webauth.raven.flask_glue import AuthDecorator
+import base64
 import json
+import os
 import pickle
 import random
-import cryptpandas as crp
 import hashlib
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
-from cryptography.fernet import Fernet
-import base64
+import getpass
+import io
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import pyotp
 import qrcode
 from io import BytesIO
+from datetime import datetime, time, timedelta
+import pyarrow as pa
+
+import requests
+from urllib.parse import urlencode
+
+import flask
+from flask import (Flask, redirect, Blueprint, request, session,
+                   render_template_string, send_file, url_for,
+                   make_response, render_template, send_from_directory)
+
+from bokeh.io import output_file, show
+from bokeh.plotting import figure
+from bokeh.embed import components
+from bokeh.models import (Range1d, LinearAxis, ColumnDataSource, HoverTool,
+                          TapTool, CustomJS, FuncTickFormatter,
+                          NumeralTickFormatter, CustomJSTickFormatter)
+
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.fernet import Fernet
+
+import cryptpandas as crp
+from ucam_webauth.raven.flask_glue import AuthDecorator
 
 class R(flask.Request):
-    trusted_hosts = {'localhost'}
+    trusted_hosts = {'localhost', '127.0.0.1', 'wp280.user.srcf.net'}
 
 app = Flask(__name__)
 app.request_class = R
+
+app.config['SERVER_NAME'] = 'wp280.user.srcf.net'
+
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+)
 
 # Initialize the AuthDecorator
 auth_decorator = AuthDecorator(desc='DCBC Ergs')
@@ -62,12 +80,14 @@ passhash = secrets_dict.get('passhash')
 
 superusers = ['wp280', 'kb752']
 
-authusers = ['wp280', 'kb752']
+authusers = ['wp280', 'kb752', 'bm651', 'tjm81']
 
 app.secret_key = secrets_dict.get('secret_key')
 
-decrypt_pass = getpass.getpass('Decryption key:')
+decrypt_pass = os.environ.get('FLASK_APP_PASSWORD')
 
+if decrypt_pass is None:
+    raise ValueError("Environment variable FLASK_APP_PASSWORD is not set")
 
 def derive_key(password: str) -> bytes:
     kdf = PBKDF2HMAC(
@@ -111,7 +131,8 @@ def decrypt_api_key(encrypted_data, password):
 # Replace these with your actual credentials
 CLIENT_ID = secrets_dict.get('api_id')
 CLIENT_SECRET = decrypt_api_key(secrets_dict.get('api_key'), decrypt_pass)
-REDIRECT_URI = 'http://localhost:5000/callback'
+
+REDIRECT_URI = 'http://wp280.user.srcf.net/callback'
 
 # Authorization URL
 AUTH_URL = 'https://log.concept2.com/oauth/authorize'
@@ -173,62 +194,71 @@ def login():
     if os.path.exists(file_path):
         token_path = f'{file_path}/token.txt'
 
-        if os.path.exists(token_path):
-            with open(token_path, 'rb') as file:
-                encrypted_data = file.read()
+        users_file = './data/users.crypt'
 
-            # Decrypt the data
-            token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
-
+        if os.path.exists(users_file):
+            users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
+            user_data = users_data[users_data['crsid'] == crsid]
         else:
-            return(redirect(url_for('authorize')))
+            raise TypeError("Something has gone wrong - no users file found!")
 
-        authorized = 'access_token' in token_data
+        if user_data['Logbook'][0] == True:
+            if os.path.exists(token_path):
+                with open(token_path, 'rb') as file:
+                    encrypted_data = file.read()
 
-        if authorized:
-            access_token = token_data['access_token']
+                # Decrypt the data
+                token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
 
-            headers = {
-                'Authorization': f'Bearer {access_token}',
-                'Content-Type': 'application/json'
-            }
-
-            response = requests.get(USER_URL, headers=headers)  # Use GET to retrieve user data
-            if response.status_code == 200:
-                user_data = response.json()['data']
-
-                info_file = f'{file_path}/user_info.txt'
-
-                user_data_json = json.dumps(user_data)
-
-                # Encrypt the JSON string
-                encrypted_data = datacipher.encrypt(user_data_json.encode())
-
-                # Write the encrypted data to the file
-                with open(info_file, 'wb') as file:  # Note 'wb' mode for binary writing
-                    file.write(encrypted_data)
             else:
-                refresh_token = token_data['refresh_token']
+                return(redirect(url_for('authorize')))
 
-                token_params = {
-                    'grant_type': 'refresh_token',
-                    'client_id': CLIENT_ID,
-                    'client_secret': CLIENT_SECRET,
-                    'scope': 'user:read,results:read',
-                    'refresh_token': refresh_token
+            authorized = 'access_token' in token_data
+
+            if authorized:
+                access_token = token_data['access_token']
+
+                headers = {
+                    'Authorization': f'Bearer {access_token}',
+                    'Content-Type': 'application/json'
                 }
 
-                response = requests.post(TOKEN_URL, data=token_params)
-                token_data = response.json()
+                response = requests.get(USER_URL, headers=headers)  # Use GET to retrieve user data
+                if response.status_code == 200:
+                    user_data = response.json()['data']
 
-                token_data_json = json.dumps(token_data)
+                    info_file = f'{file_path}/user_info.txt'
 
-                # Encrypt the JSON string
-                encrypted_data = datacipher.encrypt(token_data_json.encode())
+                    user_data_json = json.dumps(user_data)
 
-                # Write the encrypted data to the file
-                with open(token_path, 'wb') as file:  # Note 'wb' mode for binary writing
-                    file.write(encrypted_data)
+                    # Encrypt the JSON string
+                    encrypted_data = datacipher.encrypt(user_data_json.encode())
+
+                    # Write the encrypted data to the file
+                    with open(info_file, 'wb') as file:  # Note 'wb' mode for binary writing
+                        file.write(encrypted_data)
+                else:
+                    refresh_token = token_data['refresh_token']
+
+                    token_params = {
+                        'grant_type': 'refresh_token',
+                        'client_id': CLIENT_ID,
+                        'client_secret': CLIENT_SECRET,
+                        'scope': 'user:read,results:read',
+                        'refresh_token': refresh_token
+                    }
+
+                    response = requests.post(TOKEN_URL, data=token_params)
+                    token_data = response.json()
+
+                    token_data_json = json.dumps(token_data)
+
+                    # Encrypt the JSON string
+                    encrypted_data = datacipher.encrypt(token_data_json.encode())
+
+                    # Write the encrypted data to the file
+                    with open(token_path, 'wb') as file:  # Note 'wb' mode for binary writing
+                        file.write(encrypted_data)
 
         resp = make_response(redirect(url_for('index')))
 
@@ -246,78 +276,162 @@ def setup():
 
     crsid = auth_decorator.principal
 
+    if crsid not in authusers:
+        return(redirect(url_for('sorry')))
+
     file_path = f'./data/{crsid}'
 
-    token_path = f'{file_path}/token.txt'
+    args = request.args
 
-    if not os.path.exists(token_path):
-        return(redirect(url_for('login')))
+    if 'no-logbook' in args:
 
-    with open(token_path, 'rb') as file:
-        encrypted_data = file.read()
+        if request.method == 'POST':
 
-    # Decrypt the data
-    token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
+            users_file = './data/users.crypt'
 
-    access_token = token_data['access_token']
+            # Append new row to DataFrame
+            new_row = pd.DataFrame([{
+                'crsid': crsid,
+                'First Name': request.form.get('first_name'),
+                'Last Name': request.form.get('last_name'),
+                'color': request.form.get('color'),
+                'Preferred Name': request.form.get('preferred_name'),
+                'Squad': request.form.get('squad'),
+                'Bowside': request.form.get('bowside'),
+                'Strokeside': request.form.get('strokeside'),
+                'Coxing': request.form.get('coxing'),
+                'Sculling': request.form.get('sculling'),
+                'Years Rowing': request.form.get('years_rowing'),
+                'Year': request.form.get('year'),
+                'Subject': request.form.get('subject'),
+                'Logbook': False
+            }])
 
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
-    }
+            if os.path.exists(users_file):
+                users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
 
-    response = requests.get(USER_URL, headers=headers)  # Use GET to retrieve user data
-    if response.status_code == 200:
-        user_data = response.json()['data']
+                # Append new row to DataFrame using pd.concat
+                if crsid not in users_data['crsid'].values:
+                    users_data = pd.concat([users_data, new_row], ignore_index=True)
 
-        info_file = f'./data/{crsid}/user_info.txt'
+                    # Save the updated DataFrame back to the CSV file
+                    crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
 
-        user_data_json = json.dumps(user_data)
+                elif 'add-logbook' in args and crsid in users_data['crsid'].values: # adding a logbook after creation of a user
+                    if 'logbook id' in users_data:
+                        users_data[users_data['crsid'] == crsid]['logbook id'] = int(logid)
+                    else:
+                        users_data['logbook id'] = None
+                        users_data[users_data['crsid'] == crsid]['logbook id'] = int(logid)
+                    crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
 
-        # Encrypt the JSON string
-        encrypted_data = datacipher.encrypt(user_data_json.encode())
 
-        # Write the encrypted data to the file
-        with open(info_file, 'wb') as file:  # Note 'wb' mode for binary writing
-            file.write(encrypted_data)
+            else:
+                print(new_row)
 
-        logid = user_data['id']
-        first_name = user_data['first_name']
-        last_name = user_data['last_name']
-        color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)]))
+                # Save the updated DataFrame back to the CSV file
+                crp.to_encrypted(new_row, password = decrypt_pass, path=users_file)
 
-        # Load the users DataFrame
-        users_file = './data/users.crypt'
+            userpath = f'./data/{crsid}'
+            if not os.path.exists(userpath):
+                os.makedirs(userpath)
 
-        # Append new row to DataFrame
-        new_row = pd.DataFrame([{
-            'crsid': str(crsid),
-            'First Name': str(first_name),
-            'Last Name': str(last_name),
-            'logbook id': int(logid),
-            'color': str(color),
-            'Preferred Name': str(first_name)
-        }])
+            return(redirect(url_for('index')))
 
-        if os.path.exists(users_file):
-            users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
-
-            # Append new row to DataFrame using pd.concat
-            users_data = pd.concat([users_data, new_row], ignore_index=True)
-
-            # Save the updated DataFrame back to the CSV file
-            crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
 
         else:
-            print(new_row)
-
-            # Save the updated DataFrame back to the CSV file
-            crp.to_encrypted(new_row, password = decrypt_pass, path=users_file)
+            color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)]))
+            return(render_template(template_name_or_list='nologbook.html', crsid=crsid, color=color))
 
 
-        return(redirect(url_for('index')))
     else:
-        return(redirect(url_for('authorize')))
+
+        token_path = f'{file_path}/token.txt'
+
+        if not os.path.exists(token_path):
+            return(redirect(url_for('login')))
+
+        with open(token_path, 'rb') as file:
+            encrypted_data = file.read()
+
+        # Decrypt the data
+        token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
+
+        access_token = token_data['access_token']
+
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+
+        response = requests.get(USER_URL, headers=headers)  # Use GET to retrieve user data
+        if response.status_code == 200:
+            user_data = response.json()['data']
+
+            info_file = f'./data/{crsid}/user_info.txt'
+
+            user_data_json = json.dumps(user_data)
+
+            # Encrypt the JSON string
+            encrypted_data = datacipher.encrypt(user_data_json.encode())
+
+            # Write the encrypted data to the file
+            with open(info_file, 'wb') as file:  # Note 'wb' mode for binary writing
+                file.write(encrypted_data)
+
+            logid = user_data['id']
+            first_name = user_data['first_name']
+            last_name = user_data['last_name']
+            color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)]))
+
+            # Load the users DataFrame
+            users_file = './data/users.crypt'
+
+            if os.path.exists(users_file):
+                users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
+
+                # Append new row to DataFrame using pd.concat
+                if crsid not in users_data['crsid'].values:
+                    new_row = pd.DataFrame([{
+                        'crsid': str(crsid),
+                        'First Name': str(first_name),
+                        'Last Name': str(last_name),
+                        'logbook id': int(logid),
+                        'color': str(color),
+                        'Preferred Name': str(first_name),
+                        'Logbook': True
+                    }])
+
+                    users_data = pd.concat([users_data, new_row], ignore_index=True)
+
+                    # Save the updated DataFrame back to the CSV file
+                    crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
+
+                else: # adding a logbook after creation of a user
+                    if users_data[users_data['crsid'] == crsid]['Logbook'][0] == False:
+                        print(users_data[users_data['crsid'] == crsid]['Logbook'], logid)
+                        users_data.loc[users_data['crsid'] == crsid, 'Logbook'] = True
+
+
+                        if 'logbook id' in users_data:
+                            users_data.loc[users_data['crsid'] == crsid, 'logbook id'] = int(logid)
+                        else:
+                            users_data['logbook id'] = None
+                            users_data.loc[users_data['crsid'] == crsid, 'logbook id'] = int(logid)
+                        crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
+                        print(users_data[users_data['crsid'] == crsid]['Logbook'], logid, users_data[users_data['crsid'] == crsid]['logbook id'])
+
+
+            else:
+                print(new_row)
+
+                # Save the updated DataFrame back to the CSV file
+                crp.to_encrypted(new_row, password = decrypt_pass, path=users_file)
+
+
+            return(redirect(url_for('user_settings')))
+        else:
+            return(redirect(url_for('authorize')))
 
 
 @app.route('/home')
@@ -334,62 +448,33 @@ def index():
 
     if str(crsid) not in users_data['crsid'].values:
         return redirect(url_for('setup'))
+    else:
+        user_data = users_data[users_data['crsid'] == crsid]
 
-    del users_data
+        print(user_data, user_data['Logbook'])
 
     file_path = f'./data/{crsid}'
 
-    if not os.path.exists(f'{file_path}/token.txt'):
+    if not os.path.exists(f'{file_path}/token.txt') and user_data['Logbook'][0] == True:
         return(redirect(url_for('authorize')))
 
-    with open(f'{file_path}/token.txt', 'rb') as file:
-        encrypted_data = file.read()
+    if user_data['Logbook'][0] == True:
+        logbook = True
+    else:
+        logbook = False
 
-    # Decrypt the data
-    token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
 
-    authorized = 'access_token' in token_data
-    from_date = request.cookies.get('from_date', 'Not set')
-    to_date = request.cookies.get('to_date', 'Not set')
-    last_access = request.cookies.get('last_access', 'Not set')
-
-    print(f"Authorized: {authorized}")
-    print(f"From Date: {from_date}")
-    print(f"To Date: {to_date}")
-
-    global user
-
-    welcome = 'Unknown User'
-
-    if authorized:
-        info_file = f'./data/{crsid}/user_info.txt'
-
-        if not os.path.exists(info_file):
-            return(redirect(url_for('login')))
-
-        # return (user_data)
-        with open(info_file, 'rb') as file:
-            encrypted_data = file.read()
-
-        # Decrypt the data
-        user_data = json.loads(datacipher.decrypt(encrypted_data).decode())
-
-        user = user_data['id']
-        welcome = user_data['first_name'] + " " + user_data['last_name']
+    welcome = user_data['First Name'] + " " + user_data['Last Name']
 
     if crsid in superusers:
         superuser = True
     else:
         superuser = False
 
-    if authorized:
-        return(render_template(
+    return(render_template(
         template_name_or_list='home.html',
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'),
-        authorize = url_for('authorize'), captains = url_for('captains'), superuser=superuser))
-
-    else:
-        return redirect(url_for('authorize'))
+        authorize = url_for('authorize'), captains = url_for('captains'), superuser=superuser, logbook=logbook))
 
 @app.route(f'/authorize')
 def authorize():
@@ -450,28 +535,26 @@ def callback():
         resp = make_response(render_template_string('''
             <h1>Reload Data?</h1>
             <p>You have already previously loaded data, and you have {{ length_wd }} workouts loaded </p>
-            <p><b>New workouts will sync automatically!</b></p>
+            <p><b>New workouts will (eventually, when I implement it) sync automatically!</b></p>
             <p><a href = "{{ url_for('load_all') }}"> I'm sure, load data</a></p>
             <p><a href = "{{ url_for('index') }}">Go Home</a></p>
         ''', length_wd = length_wd))
-
-        resp.set_cookie('access_token', access_token, secure=True, httponly=True, max_age=expires_in)
-        resp.set_cookie('refresh_token', refresh_token, secure=True, httponly=True, max_age=expires_in)
-
 
         return resp
 
     else:
         resp = make_response(redirect(url_for("load_all")))
 
-        resp.set_cookie('access_token', access_token, secure=True, httponly=True, max_age=expires_in)
-        resp.set_cookie('refresh_token', refresh_token, secure=True, httponly=True, max_age=expires_in)
         return resp
 
 @app.route(f'/load_all')
 def load_all():
 
     crsid = auth_decorator.principal
+
+    args = request.args
+    if 'crsid' in args:
+        crsid = args.get('crsid')
 
     file_path = f'./data/{crsid}'
 
@@ -515,7 +598,6 @@ def load_all():
 
         while len_recover != 1:
             old_set = df['date'].min()
-            print('Finding more workouts - oldest so far',old_set)
 
             data_params = {
             "from": '2000-01-01',
@@ -540,56 +622,68 @@ def load_all():
         return(render_template_string('''<h1>Your Logbook is empty!</h1>'''))
 
     df = df.sort_values('date')
+    df = df.dropna(axis=1, how='all')
+
+    for column in df.columns:
+        try:
+            # Attempt to create a Parquet-compatible PyArrow Table for this single column
+            single_column_df = df[[column]]
+            pa.Table.from_pandas(single_column_df)
+
+        except pa.lib.ArrowNotImplementedError:
+            # If it fails due to an ArrowNotImplementedError, drop the column
+            print(f"Dropping column {column} due to failure in Parquet conversion.")
+            df = df.drop(columns=[column])
+
+    struct_columns = [col.split('.')[0] for col in df.columns if '.' in col]
+    struct_columns = list(set(struct_columns))  # Remove duplicates
+
+    # Check and drop problematic structs
+    for struct_col in struct_columns:
+        try:
+            # Attempt to create a PyArrow Table for the entire struct
+            struct_df = df[[col for col in df.columns if col.startswith(struct_col)]]
+            pa.Table.from_pandas(struct_df)
+
+        except pa.lib.ArrowNotImplementedError:
+            # Drop all columns related to the problematic struct
+            print(f"Dropping struct {struct_col} due to failure in Parquet conversion.")
+            df = df.drop(columns=[col for col in df.columns if col.startswith(struct_col)])
+
+    # Function to check if the 'heart_rate' field in 'workout.splits' is empty or malformed
+    def clean_heart_rate(splits):
+        if isinstance(splits, list):
+            cleaned_splits = []
+            for split in splits:
+                if isinstance(split, dict):
+                    heart_rate = split.get('heart_rate', {})
+                    if isinstance(heart_rate, dict) and heart_rate:  # If heart_rate is valid and non-empty
+                        split['heart_rate'] = heart_rate
+                    else:  # Remove heart_rate if it's empty or invalid
+                        split.pop('heart_rate', None)
+                cleaned_splits.append(split)
+            return cleaned_splits
+        return splits
+
+    # Apply function to clean 'workout.splits' field
+    if 'workout.splits' in df:
+        df['workout.splits'] = df['workout.splits'].apply(clean_heart_rate)
 
     crp.to_encrypted(df, path=csv_file_path, password=decrypt_pass)
-    print(f"Data successfully written to {csv_file_path}")
 
-    resp = make_response(redirect(url_for('index')))
+    resp = make_response(redirect(url_for('setup')))
 
     return resp
 
-@app.route(f'/date_selection', methods=['GET', 'POST'])
-def date_selection():
-    if request.method == 'POST':
-        from_date = request.form.get('from')
-        to_date = request.form.get('to')
-
-        if from_date and to_date:
-            # Create a response object and set cookies
-            resp = make_response(redirect(url_for('index')))
-            resp.set_cookie('from_date', from_date, secure=True, httponly=True)
-            resp.set_cookie('to_date', to_date, secure=True, httponly=True)
-            return resp
-
-    # Render the form if the request method is not POST or if dates are missing
-    return render_template_string('''
-        <h1>Select Date Range</h1>
-        <form method="post">
-            <label for="from_date">From:</label>
-            <input type="text" id="from_date" name="from" required>
-            <label for="to_date">To:</label>
-            <input type="text" id="to_date" name="to" required>
-            <input type="submit" value="Update Dates">
-        </form>
-        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-        <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
-        <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
-        <script>
-            $(function() {
-                $("#from_date").datepicker({
-                    dateFormat: 'yy-mm-dd'
-                });
-                $("#to_date").datepicker({
-                    dateFormat: 'yy-mm-dd'
-                });
-            });
-        </script>
-    ''')
-
 @app.route(f'/webhook', methods=['POST'])
 def webhook():
-    print(request.json)
-    print('webhook got activated!')
+
+    if request.method == 'POST':
+        print(request.json)
+        print('webhook got activated!')
+
+        print(request.form)
+
     return(request.json)
 
 
@@ -601,8 +695,7 @@ def plot():
 
     otherview = False
 
-    if usrid in superusers:
-        superuser = True
+    superuser = superuser_check(usrid, superusers)
 
     if 'crsid' in args and usrid in superusers:
         crsid = args.get('crsid')
@@ -611,7 +704,7 @@ def plot():
         if usrid == args.get('crsid'):
             crsid = usrid
         else:
-            return(redirect(url_for('forbidden', ref=f'/plot?crsid={args.get('crsid')}')))
+            return(redirect(url_for('forbidden', ref=f'/plot?crsid={args.get("crsid")}')))
     else:
         crsid = auth_decorator.principal
 
@@ -648,7 +741,7 @@ def plot():
         return(render_template(
             template_name_or_list='plot.html',
             script=[''],
-            div=[f'No data found! Check you have logged some ergs before coming here. <p><a href={ url_for("home")}> Return to home </a></p>'],
+            div=[f'No data found! Check you have logged some ergs before coming here. <p><a href={ url_for("index")}> Return to home </a></p>'],
             otherview=otherview, crsid=crsid,
             club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
@@ -771,9 +864,13 @@ def data():
 
     args = request.args
 
+    if superuser_check(crsid, superusers):
+        if 'crsid' in args:
+            crsid = args.get('crsid')
+
     file_path = f'./data/{crsid}'
 
-    if not os.path.exists(file_path):
+    if not os.path.exists(file_path) or not os.path.exists(f'{file_path}/workout_data.crypt'):
         return redirect(url_for('login'))
 
     df = crp.read_encrypted(path=f'{file_path}/workout_data.crypt',password=decrypt_pass)
@@ -815,7 +912,8 @@ def data():
     headers = ['id','Date','Distance','Time','Split / 500m','Stroke Rate','Type','Average HR','Comments']
 
     # Apply the function to each cell in the DataFrame
-    subdf['stroke_rate'] = subdf['stroke_rate'].apply(lambda x: int(x) if isinstance(x, (float, int)) and not pd.isna(x) else x)
+    if 'stroke_rate' in subdf:
+        subdf['stroke_rate'] = subdf['stroke_rate'].apply(lambda x: int(x) if isinstance(x, (float, int)) and not pd.isna(x) else x)
 
     subdf.replace({np.nan: None, 'unknown': None}, inplace=True)
 
@@ -846,7 +944,7 @@ def workout():
         if usrid == args.get('crsid'):
             crsid = usrid
         else:
-            return(redirect(url_for('forbidden', ref=f'/workout?id={workoutid}&crsid={args.get('crsid')}')))
+            return(redirect(url_for('forbidden', ref=f'/workout?id={workoutid}&crsid={args.get("crsid")}')))
     else:
         crsid = auth_decorator.principal
 
@@ -911,7 +1009,7 @@ def workout():
             file.write(encrypted_data)
 
         data_headers = {
-            'Authorization': f'Bearer {token_data['access_token']}',
+            'Authorization': f'Bearer {token_data["access_token"]}',
             'Content-Type': 'application/json'
         }
 
@@ -920,7 +1018,7 @@ def workout():
         dataresponse = response.json()
 
         if 'data' not in dataresponse:
-            return(f'error - response is {dataresponse['status_code']}, expected 200')
+            return(f'error - response is {dataresponse["status_code"]}, expected 200')
 
     res = dataresponse['data']
 
@@ -1055,6 +1153,10 @@ def club():
 
     for crsid in crsids:
         user_path = f'./data/{crsid}'
+
+        if not os.path.exists(f'{user_path}/workout_data.crypt'):
+            continue
+
         userdf = crp.read_encrypted(password = decrypt_pass, path=f'{user_path}/workout_data.crypt')
 
         userdf['date'] = pd.to_datetime(userdf['date'])
@@ -1074,11 +1176,22 @@ def club():
 
     totaltime = format_seconds(totaltime/10)
 
-    clubdf = pd.concat(dfs, axis=1)
+    try:
+        clubdf = pd.concat(dfs, axis=0, ignore_index=True)
+    except:
+        return(render_template(
+        template_name_or_list='club.html',
+        script='',
+        div=['<p>No user data found! Make sure some data exists. </p>'], totaldist = 0, totaltime = 0,
+        clubdf = [], superuser = superuser_check(auth_decorator.principal, superusers),
+        club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
     p1 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime')
 
     for crsid in crsids:
+        if f'{crsid}_date' not in clubdf:
+            continue
+
         date=clubdf[f'{crsid}_date']
         distance=clubdf[f'{crsid}_distance'].cumsum()
         idcolor = users_data[users_data['crsid'] == crsid]['color'].values[0]
@@ -1160,7 +1273,7 @@ def pbs():
 
     file_path = f'./data/{crsid}'
 
-    if not os.path.exists(file_path):
+    if not os.path.exists(file_path) or not os.path.exists(f'{file_path}/workout_data.crypt'):
         return redirect(url_for('login'))
 
     df = crp.read_encrypted(password = decrypt_pass, path=f'{file_path}/workout_data.crypt')
@@ -1409,15 +1522,33 @@ def coachview():
         users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
 
         crsids = users_data['crsid'].values
+        args = request.args
 
         dfs = []
 
+        totaldist = 0
+        totaltime = 0
+
+        if 'from_date' in args and 'to_date' in args:
+            from_date = args.get('from_date')
+            to_date = args.get('to_date')
+
+        else:
+            from_date = datetime.strptime('2024-10-01', '%Y-%m-%d')
+            to_date = datetime.strptime('2025-06-30', '%Y-%m-%d')
+
         for crsid in crsids:
             user_path = f'./data/{crsid}'
+
+            if not os.path.exists(f'{user_path}/workout_data.crypt'):
+                continue
+
             userdf = crp.read_encrypted(password = decrypt_pass, path=f'{user_path}/workout_data.crypt')
 
             userdf['date'] = pd.to_datetime(userdf['date'])
             userdf['distance'] = pd.to_numeric(userdf['distance'], errors='coerce')
+
+            userdf = userdf[(userdf['date'] >= from_date) & (userdf['date'] <= to_date)]
 
             tdf = pd.DataFrame({f'{crsid}_date': userdf['date'],
                                 f'{crsid}_distance': userdf['distance']})
@@ -1426,11 +1557,19 @@ def coachview():
 
             dfs.append(tdf)
 
-        clubdf = pd.concat(dfs, axis=1)
+            totaldist += userdf['distance'].sum()
+            totaltime += userdf['time'].sum()
+
+        totaltime = format_seconds(totaltime/10)
+
+        clubdf = pd.concat(dfs, axis=0, ignore_index=True)
 
         p1 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime')
 
         for crsid in crsids:
+            if f'{crsid}_date' not in clubdf:
+                continue
+
             date=clubdf[f'{crsid}_date']
             distance=clubdf[f'{crsid}_distance'].cumsum()
             idcolor = users_data[users_data['crsid'] == crsid]['color'].values[0]
@@ -1462,10 +1601,11 @@ def coachview():
         script1, div1 = components(p1)
 
         return(render_template(
-            template_name_or_list='coach.html',
+            template_name_or_list='club.html',
             script=[script1],
-            div=[div1],
-            clubdf = clubdf))
+            div=[div1], totaldist = totaldist, totaltime = totaltime,
+            clubdf = clubdf,
+            club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
 @app.route('/captains')
 def captains():
@@ -1518,7 +1658,8 @@ def user_settings():
             'Sculling': request.form.get('sculling', personal_data['Sculling']),
             'Years Rowing': request.form.get('years_rowing', personal_data['Years Rowing']),
             'Year': request.form.get('year', personal_data['Year']),
-            'Subject': request.form.get('subject', personal_data['Subject'])
+            'Subject': request.form.get('subject', personal_data['Subject']),
+            'Logbook': personal_data['Logbook']
         }
 
         print(new_data)
@@ -1538,26 +1679,34 @@ def user_settings():
         authorize = url_for('authorize'), captains = url_for('captains'), superuser=superuser,
         personal_data = personal_data))
 
-availabilities_file = 'availabilities.json'
 days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 hours_of_day = range(6, 18)  # 6:00 to 17:00 (9 AM to 5 PM)
 
-def load_availabilities():
-    try:
-        with open(availabilities_file, 'r') as file:
-            return json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-
-def save_availabilities(availabilities):
-    with open(availabilities_file, 'w') as file:
-        json.dump(availabilities, file)
 
 @app.route('/availability', methods=['GET', 'POST'])
 def set_availabilities():
     crsid = auth_decorator.principal
 
     superuser = superuser_check(crsid, superusers)
+
+    if os.path.exists(f'./data/{crsid}/availability.json'):
+        existing = True
+        with open(f'./data/{crsid}/availability.json', 'r') as file:
+            existingData = json.load(file)
+            print(existingData)
+    else:
+        existing = False
+        existingData = {}
+
+    users = './data/users.crypt'
+    users_data = crp.read_encrypted(password = decrypt_pass, path=users)
+
+    if str(crsid) not in users_data['crsid'].values:
+        print(crsid,'not found in',users_data['crsid'].values)
+        return redirect(url_for('setup'))
+    personal_data = users_data.loc[users_data['crsid'] == crsid].to_dict('records')[0]
+
+    username = personal_data['Preferred Name'] +' '+ personal_data['Last Name']
 
     if request.method == 'POST':
         # Try to parse the JSON data
@@ -1585,16 +1734,40 @@ def set_availabilities():
         # Process the data according to the new states
         availability = {name: times}
 
-        with open('availability.json', 'w') as f:
+        file_path = f'./data/{crsid}/availability.json'
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        # Write the JSON data to the file
+        with open(file_path, 'w') as f:
             json.dump(availability, f, indent=4)
 
-    return render_template('availability.html', hours_of_day=hours_of_day, days_of_week=days_of_week, superuser=superuser)
+    weeks = [1,2,3,4,5,6,7,8,9,10]
+    selected_week = 1
+
+    context = {
+        'weeks': weeks,
+        'selected_week': selected_week,
+        'existingData': existingData,
+        'crsid': crsid,
+        'username': username,
+        'days_of_week': days_of_week,
+        'hours_of_day': hours_of_day,
+        'existing': existing,
+        'superuser': superuser
+    }
+
+    return render_template('availability.html', **context)
 
 @app.route('/submit_availability', methods=['POST'])
 def submit_availability():
+    crsid = auth_decorator.principal
+
     data = request.get_json()
     name = data.get('name')
     times = data.get('times', [])
+    week = data.get('week')
 
     # Organize times into different categories
     availability = {
@@ -1612,22 +1785,19 @@ def submit_availability():
             continue
 
     user_data = {
-        'name': name,
-        'times': availability
+        'weeks': {
+            f'{week}': availability
+        }
     }
 
-    # Convert to DataFrame
-    try:
-        with open('availability.json', 'r') as f:
-            all_data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        all_data = []
+    file_path = f'./data/{crsid}/availability.json'
 
-    all_data.append(user_data)
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-    # Write updated data to file
-    with open('availability.json', 'w') as f:
-        json.dump(all_data, f, indent=4)
+    # Write the JSON data to the file
+    with open(file_path, 'w') as f:
+        json.dump(user_data, f, indent=4)
 
     return(redirect(url_for('planner')))
 
@@ -1675,14 +1845,14 @@ def format_seconds(seconds):
         return f'{seconds_int}.{tenths}'
 
 app.config.update(
-    SESSION_COOKIE_SECURE=True,  # Ensure cookies are only sent over HTTPS
+    SESSION_COOKIE_SECURE=False,  # Ensure cookies are only sent over HTTPS
     SESSION_COOKIE_HTTPONLY=True, # Prevent JavaScript access to cookies
     SESSION_COOKIE_SAMESITE='Lax'  # CSRF protection
 )
 app.static_folder = 'static'
 
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    app.run(port=21389,host='0.0.0.0', debug=False)
 
 @app.route('/favicon.ico')
 def favicon():

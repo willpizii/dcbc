@@ -10,7 +10,11 @@
 
         <p> Use the header buttons above to navigate the website </p>
 
-        <p> You can also <a href = "{{ authorize }}"> re-authenticate</a> your logbook, if required </p>
+        {% if not logbook %}
+            <p><a href = "{{ authorize }}"> Add a Concept2 Logbook account</a> to keep track of your ergs! </p>
+        {% else %}
+            <p><a href = "{{ authorize }}"> Reload your Concept2 Logbook account</a> if something is broken </p>
+        {% endif %}
     </div>
 </div>
 

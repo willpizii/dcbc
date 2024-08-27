@@ -60,7 +60,7 @@
             </tr>
             <tr>
                 <td><label for="sculling">Sculling Ability:</label></td>
-                <td><select id="sculling" name="Sculling">
+                <td><select id="sculling" name="sculling">
                     <option value="Yes" {% if personal_data['Sculling'] == 'Yes' %}selected{% endif %}>Yes</option>
                     <option value="Limited" {% if personal_data['Sculling'] == 'Limited' %}selected{% endif %}>Limited</option>
                     <option value="No" {% if personal_data['Sculling'] == 'No' %}selected{% endif %}>No</option>
@@ -100,7 +100,7 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2"><input type="submit" value="Submit"></td>
+                <td colspan="2"><input type="submit" value="Update"></td>
             </tr>
         </table>
     </div>

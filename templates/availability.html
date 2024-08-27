@@ -57,36 +57,48 @@
     }
 </style>
 
-<h1>Fill your Availability</h1>
-<div class="button-group">
-    <button id="markAvailable" class='active-button'>Mark as Available</button>
-    <button id="markNotAvailable">Mark as Not Available</button>
-    <button id="markIfNeedsBe">Mark as If Needs Be</button>
-</div>
-<form method="POST" id="availabilityForm" action="/submit_availability">
-    <label for="name">Your Name:</label>
-    <input type="text" id="name" name="name" required><br><br>
+<div class="container mt-5">
+    <div class="p-4 border rounded bg-light">
+        <h1 class="mb-4">Fill your Availability</h1>
+        <div class="button-group">
+            <button id="markAvailable" class='active-button'>Mark as Available</button>
+            <button id="markNotAvailable">Mark as Not Available</button>
+            <button id="markIfNeedsBe">Mark as If Needs Be</button>
+        </div>
+        <form method="POST" id="availabilityForm" action="/submit_availability">
+            <label for="name">Your Name:</label>
+            <input type="text" id="name" name="name" hidden value="{{ crsid }}">
+            <input type="text" style="cursor: not-allowed;" disabled value="{{ username }}"><br><br>
 
-    <label>Select Times:</label><br>
-    <table id="availabilityTable" border="1">
-        <tr>
-            <th></th>
-            {% for day in days_of_week %}
-                <th>{{ day }}</th>
-            {% endfor %}
-        </tr>
-        {% for hour in hours_of_day %}
-        <tr>
-            <th>{{ hour }}:00</th>
-            {% for day in days_of_week %}
-            <td data-time="{{ day }} {{ hour }}:00" class="available"></td>
-            {% endfor %}
-        </tr>
-        {% endfor %}
-    </table>
-    <br>
-    <button type="submit">Submit</button>
-</form>
+            <select id="weekSelector" name="week" class="form-select mb-3">
+                {% for week in weeks %}
+                    <option value="{{ week }}" {% if week == selected_week %}selected{% endif %}>Week {{ week }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Select Times:</label><br>
+            <table id="availabilityTable" border="1">
+                <tr>
+                    <th></th>
+                    {% for day in days_of_week %}
+                        <th>{{ day }}</th>
+                    {% endfor %}
+                </tr>
+                {% for hour in hours_of_day %}
+                <tr>
+                    <th>{{ hour }}:00</th>
+                    {% for day in days_of_week %}
+                        <td data-time="{{ day }} {{ hour }}:00"></td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </table>
+            <br>
+            <button type="submit">Submit</button>
+        </form>
+    </div>
+</div>
+
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -96,14 +108,59 @@
         const lockedCells = new Set(); // Set to track locked cells
 
         let markMode = 'available'; // Default mode
+        let currentWeek = document.getElementById('weekSelector').value;
 
         const table = document.getElementById('availabilityTable');
         const form = document.getElementById('availabilityForm');
+        const weekSelector = document.getElementById('weekSelector');
 
-        // Initialize all cells with 'available' state
-        document.querySelectorAll('td[data-time]').forEach(cell => {
-            markedCells.set(cell.dataset.time, 'available');
-            cell.classList.add('available');
+        const existingData = {{ existingData|tojson|default('{}')|safe }};
+
+        // Function to update table based on week selection
+        function initializeTable() {
+            const currentWeek = weekSelector.value;
+            if (!existingData || !existingData.weeks || !existingData.weeks[currentWeek]) {
+                console.warn(`No data found for week ${currentWeek}`);
+                document.querySelectorAll('td[data-time]').forEach(cell => {
+                    const time = cell.dataset.time;
+
+                    // Determine the cell's state based on existing data
+                    let currentState = 'available'; // Default state
+                    // Apply the determined state
+                    markedCells.set(time, currentState);
+                    cell.classList.remove('available', 'not-available', 'if-needs-be');
+                    cell.classList.add(currentState);
+                });
+                return;
+            }
+
+            const weekData = existingData.weeks[currentWeek];
+
+            document.querySelectorAll('td[data-time]').forEach(cell => {
+                const time = cell.dataset.time;
+
+                // Determine the cell's state based on existing data
+                let currentState = 'available'; // Default state
+
+                if (weekData['available'] && weekData['available'].includes(time)) {
+                    currentState = 'available';
+                } else if (weekData['not-available'] && weekData['not-available'].includes(time)) {
+                    currentState = 'not-available';
+                } else if (weekData['if-needs-be'] && weekData['if-needs-be'].includes(time)) {
+                    currentState = 'if-needs-be';
+                }
+
+                // Apply the determined state
+                markedCells.set(time, currentState);
+                cell.classList.remove('available', 'not-available', 'if-needs-be');
+                cell.classList.add(currentState);
+            });
+        }
+
+        initializeTable();
+
+        weekSelector.addEventListener('change', function() {
+            initializeTable();
         });
 
         // Event listeners for buttons
@@ -124,7 +181,6 @@
             highlightButton(this);
         });
 
-        // Function to highlight the active button
         function highlightButton(activeButton) {
             buttons.forEach(button => button.classList.remove('active-button'));
             activeButton.classList.add('active-button');
@@ -164,13 +220,9 @@
                 }
             });
 
-            if (times.length === 0) {
-                alert("Please select at least one time slot.");
-                return;
-            }
-
             const data = {
                 name: form.name.value,
+                week: currentWeek,
                 times: times
             };
 

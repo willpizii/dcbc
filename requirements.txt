@@ -2,7 +2,7 @@ Flask
 requests
 pandas
 matplotlib
-numpy==1.26.4
+numpy<=1.26.4
 bokeh
 cryptpandas
 cryptography
