@@ -3,5 +3,6 @@ data/*
 __pycache__
 archive
 availability.json
+*.log
 
 !data/.gitkeep

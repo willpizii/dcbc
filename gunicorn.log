@@ -1,7 +1,0 @@
-[2024-08-27 21:50:17 +0100] [3747646] [INFO] Starting gunicorn 23.0.0
-[2024-08-27 21:50:17 +0100] [3747646] [INFO] Listening at: http://0.0.0.0:21389 (3747646)
-[2024-08-27 21:50:17 +0100] [3747646] [INFO] Using worker: sync
-[2024-08-27 21:50:17 +0100] [3747772] [INFO] Booting worker with pid: 3747772
-[2024-08-27 21:50:17 +0100] [3747801] [INFO] Booting worker with pid: 3747801
-[2024-08-27 21:50:18 +0100] [3747824] [INFO] Booting worker with pid: 3747824
-[2024-08-27 21:50:18 +0100] [3747826] [INFO] Booting worker with pid: 3747826
