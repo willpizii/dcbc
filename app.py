@@ -78,9 +78,15 @@ else:
 
 passhash = secrets_dict.get('passhash')
 
-superusers = ['wp280', 'kb752']
+authusers_file = 'data/auth_users.txt'
 
-authusers = ['wp280', 'kb752', 'bm651', 'tjm81']
+with open(authusers_file, 'r') as file:
+    authusers = [line.strip() for line in file.readlines()]
+
+superusers_file = 'data/super_users.txt'
+
+with open(superusers_file, 'r') as file:
+    superusers = [line.strip() for line in file.readlines()]
 
 app.secret_key = secrets_dict.get('secret_key')
 
@@ -186,6 +192,10 @@ def sorry():
 def login():
     crsid = auth_decorator.principal
 
+    args = request.args
+    if 'crsid' in args and crsid in superusers:
+        crsid = args.get('crsid')
+
     if crsid not in authusers:
         return(redirect(url_for('sorry')))
 
@@ -198,7 +208,17 @@ def login():
 
         if os.path.exists(users_file):
             users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
-            user_data = users_data[users_data['crsid'] == crsid]
+            print(users_data)
+            if crsid in users_data['crsid']:
+                user_data = users_data[users_data['crsid'] == crsid]
+            else:
+                authorized = False
+
+                resp = (make_response(render_template(
+                    template_name_or_list='welcome.html',
+                    crsid = crsid, authorized=authorized)))
+
+                return resp
         else:
             raise TypeError("Something has gone wrong - no users file found!")
 
@@ -553,7 +573,7 @@ def load_all():
     crsid = auth_decorator.principal
 
     args = request.args
-    if 'crsid' in args:
+    if 'crsid' in args and crsid in superusers:
         crsid = args.get('crsid')
 
     file_path = f'./data/{crsid}'
@@ -589,9 +609,44 @@ def load_all():
 
     dataresponse = response.json()
 
+    if 'data' not in dataresponse:
+        token_params = {
+            'grant_type': 'refresh_token',
+            'client_id': CLIENT_ID,
+            'client_secret': CLIENT_SECRET,
+            'scope': 'user:read,results:read',
+            'refresh_token': refresh_token
+        }
+
+        response = requests.post(TOKEN_URL, data=token_params)
+        token_data = response.json()
+
+        token_data_json = json.dumps(token_data)
+
+        # Encrypt the JSON string
+        encrypted_data = datacipher.encrypt(token_data_json.encode())
+
+        # Write the encrypted data to the file
+        with open(token_path, 'wb') as file:  # Note 'wb' mode for binary writing
+            file.write(encrypted_data)
+
+        data_headers = {
+            'Authorization': f'Bearer {token_data["access_token"]}',
+            'Content-Type': 'application/json'
+        }
+
+        response = requests.get(data_url, headers=data_headers)
+
+        dataresponse = response.json()
+
+        if 'data' not in dataresponse:
+            return(f'error - response is {dataresponse["status_code"]}, expected 200')
+
     # return redirect(url_for('index'))
 
+
     df = flatten_data(dataresponse)
+    print(df)
 
     if len(df) == 50:
         len_recover = 50
@@ -651,23 +706,22 @@ def load_all():
             df = df.drop(columns=[col for col in df.columns if col.startswith(struct_col)])
 
     # Function to check if the 'heart_rate' field in 'workout.splits' is empty or malformed
-    def clean_heart_rate(splits):
-        if isinstance(splits, list):
-            cleaned_splits = []
-            for split in splits:
-                if isinstance(split, dict):
-                    heart_rate = split.get('heart_rate', {})
-                    if isinstance(heart_rate, dict) and heart_rate:  # If heart_rate is valid and non-empty
-                        split['heart_rate'] = heart_rate
-                    else:  # Remove heart_rate if it's empty or invalid
-                        split.pop('heart_rate', None)
-                cleaned_splits.append(split)
-            return cleaned_splits
-        return splits
+    def clean_empties(value):
+        if isinstance(value, dict):
+            # Clean and filter the dictionary
+            return {
+                k: clean_empties(v)
+                for k, v in value.items()
+                if clean_empties(v)  # Keep only non-empty values
+            }
+        elif isinstance(value, list):
+            # Clean and filter the list
+            return [clean_empties(v) for v in value if clean_empties(v)]  # Keep only non-empty values
+        return value
 
-    # Apply function to clean 'workout.splits' field
-    if 'workout.splits' in df:
-        df['workout.splits'] = df['workout.splits'].apply(clean_heart_rate)
+    # Usage example:
+    df = df.applymap(clean_empties)
+    print(df)
 
     crp.to_encrypted(df, path=csv_file_path, password=decrypt_pass)
 
@@ -1111,15 +1165,34 @@ def workout():
     max_select = ['id','date','distance','time','split','stroke_rate','workout_type','heart_rate.average','comments']
     select = []
 
+    headers_mapping = {
+        'id': 'ID',
+        'date': 'Date',
+        'distance': 'Distance',
+        'time': 'Time',
+        'split': 'Split / 500m',
+        'stroke_rate': 'Stroke Rate',
+        'workout_type': 'Type',
+        'heart_rate.average': 'Average HR',
+        'comments': 'Comments'
+    }
+
     for item in max_select:
-        if item in res.keys():
+        # Handle nested dictionary case for 'heart_rate.average'
+        if '.' in item:
+            keys = item.split('.')
+            value = res.get(keys[0], {}).get(keys[1], None)
+        else:
+            value = res.get(item, None)
+
+        # Append to `select` if the item exists in `res` and is not empty or invalid
+        if value not in ['', np.nan, None, [], {}]:
             select.append(item)
 
-    resdict = {k: res[k] for k in select}
+    resdict = {k: res[k] if '.' not in k else res[k.split('.')[0]][k.split('.')[1]] for k in select}
 
-    print(resdict)
-
-    headers = ['id','Date','Distance','Time','Split / 500m','Stroke Rate','Type','Average HR','Comments']
+    # Filter headers based on `select`
+    filtered_headers = [headers_mapping[item] for item in select]
 
     return(render_template(
         template_name_or_list='workout.html',
@@ -1127,7 +1200,7 @@ def workout():
         div=[div1],
         df=strokes,
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'),
-        headers=headers, data=resdict))
+        headers=filtered_headers, data=resdict))
 
 @app.route('/club')
 def club():
@@ -1693,7 +1766,6 @@ def set_availabilities():
         existing = True
         with open(f'./data/{crsid}/availability.json', 'r') as file:
             existingData = json.load(file)
-            print(existingData)
     else:
         existing = False
         existingData = {}
@@ -1707,41 +1779,6 @@ def set_availabilities():
     personal_data = users_data.loc[users_data['crsid'] == crsid].to_dict('records')[0]
 
     username = personal_data['Preferred Name'] +' '+ personal_data['Last Name']
-
-    if request.method == 'POST':
-        # Try to parse the JSON data
-        try:
-            data = request.get_json()
-        except Exception as e:
-            print("Error parsing JSON:", e)
-            return "Bad Request - JSON Parsing Failed", 400
-
-        # Ensure 'name' and 'times' are present in the data
-        if not data or 'name' not in data or 'times' not in data:
-            print("Invalid data received:", data)
-            return "Bad Request - Missing Fields", 400
-
-        # You can process and save the data here
-
-        data = request.get_json()
-        name = data.get('name')
-        times = data.get('times', [])
-
-        # Log the received data for debugging
-        print(f"Received name: {name}")
-        print(f"Received times: {times}")
-
-        # Process the data according to the new states
-        availability = {name: times}
-
-        file_path = f'./data/{crsid}/availability.json'
-
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-        # Write the JSON data to the file
-        with open(file_path, 'w') as f:
-            json.dump(availability, f, indent=4)
 
     weeks = [1,2,3,4,5,6,7,8,9,10]
     selected_week = 1
@@ -1784,22 +1821,43 @@ def submit_availability():
         except ValueError:
             continue
 
-    user_data = {
-        'weeks': {
-            f'{week}': availability
-        }
-    }
-
     file_path = f'./data/{crsid}/availability.json'
 
     # Ensure the directory exists
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    if not os.path.exists(file_path):
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-    # Write the JSON data to the file
-    with open(file_path, 'w') as f:
-        json.dump(user_data, f, indent=4)
+        user_data = {
+            'weeks': {
+                f'{week}': availability
+            }
+        }
 
-    return(redirect(url_for('planner')))
+        # Write the JSON data to the file
+        with open(file_path, 'w') as f:
+            json.dump(user_data, f, indent=4)
+
+        return(redirect(url_for('set_availabilities')))
+
+    else:
+        with open(file_path, 'r') as f:
+            avails = json.load(f)
+
+        if week not in avails['weeks']:
+            avails['weeks'][week] = {
+                'available': [],
+                'not-available': [],
+                'if-needs-be': []
+            }
+
+        avails['weeks'][week] = availability
+
+        with open(file_path, 'w') as f:
+            json.dump(avails, f, indent=4)
+
+        return redirect(url_for('set_availabilities'))
+
+
 
 @app.route('/planner', methods=['GET'])
 def planner():
@@ -1852,7 +1910,7 @@ app.config.update(
 app.static_folder = 'static'
 
 if __name__ == '__main__':
-    app.run(port=21389,host='0.0.0.0', debug=False)
+    app.run(port=21389,host='0.0.0.0', debug=True)
 
 @app.route('/favicon.ico')
 def favicon():

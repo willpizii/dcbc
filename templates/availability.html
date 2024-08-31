@@ -94,7 +94,7 @@
                 {% endfor %}
             </table>
             <br>
-            <button type="submit">Submit</button>
+            <button type="submit">Save Week</button>
         </form>
     </div>
 </div>
@@ -118,9 +118,9 @@
 
         // Function to update table based on week selection
         function initializeTable() {
-            const currentWeek = weekSelector.value;
-            if (!existingData || !existingData.weeks || !existingData.weeks[currentWeek]) {
-                console.warn(`No data found for week ${currentWeek}`);
+            const selectedWeek = weekSelector.value;
+            if (!existingData || !existingData.weeks || !existingData.weeks[selectedWeek]) {
+                console.warn(`No data found for week ${selectedWeek}`);
                 document.querySelectorAll('td[data-time]').forEach(cell => {
                     const time = cell.dataset.time;
 
@@ -134,7 +134,7 @@
                 return;
             }
 
-            const weekData = existingData.weeks[currentWeek];
+            const weekData = existingData.weeks[selectedWeek];
 
             document.querySelectorAll('td[data-time]').forEach(cell => {
                 const time = cell.dataset.time;
@@ -160,6 +160,7 @@
         initializeTable();
 
         weekSelector.addEventListener('change', function() {
+            currentWeek = weekSelector.value;
             initializeTable();
         });
 
