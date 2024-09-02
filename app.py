@@ -55,29 +55,32 @@ app.wsgi_app = ProxyFix(
 # Initialize the AuthDecorator
 auth_decorator = AuthDecorator(desc='DCBC Ergs')
 
-# Attach the before_request handler to the Flask app
+# Change the before_request behaviour to vary per request
 @app.before_request
 def check_authentication():
-    # Skip authentication for the /coach route
+    # Skip authentication for certain routes - including coach and data sections
     if request.path.startswith('/static/') or request.path in ['/coach', '/coach/view', '/favicon.ico', '/webhook']:
-        return None  # Allow the request to proceed without authentication
-    # Otherwise, perform the authentication check
+        return None  # Do not require a raven login for the above
+    # Otherwise, require a raven login
     return auth_decorator.before_request()
 
-user = 0
-welcome = 'User'
-
-secrets = './.secrets'
+secrets = './.secrets' # API keys, etc.
 
 if os.path.exists(secrets):
     with open(secrets, 'rb') as file:
         secrets_dict = json.load(file)
-
 else:
-    raise ValueError("secrets file not found!")
+    raise ValueError("secrets file not found!") # will need to manually input the secrets file
+
+# Secrets file must contain: (in json format)
+# - passhash: hashed encryption password
+# - api_key : Concept2 logbook API key - from log.concept2.com/developers/keys/
+# - api_id  : API client ID, encrypted with encryption password (as is above)
+# - secret_key: Arbritrary secret key for flask app
 
 passhash = secrets_dict.get('passhash')
 
+# Pull in authorised users, and superusers. Each is a simple txt file of crsids, one value per line
 authusers_file = 'data/auth_users.txt'
 
 with open(authusers_file, 'r') as file:
@@ -88,13 +91,16 @@ superusers_file = 'data/super_users.txt'
 with open(superusers_file, 'r') as file:
     superusers = [line.strip() for line in file.readlines()]
 
+# Pull in the app secret key
 app.secret_key = secrets_dict.get('secret_key')
 
+# Pulls the decryption key from an environment variable - make sure this is set
 decrypt_pass = os.environ.get('FLASK_APP_PASSWORD')
 
 if decrypt_pass is None:
-    raise ValueError("Environment variable FLASK_APP_PASSWORD is not set")
+    raise ValueError("Environment variable FLASK_APP_PASSWORD is not set") # Will fail if not set!
 
+# Checks the password against the hash value from .secrets
 def derive_key(password: str) -> bytes:
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
@@ -114,30 +120,23 @@ def create_hash(password):
     password_hash = hash_object.hexdigest()
     return password_hash
 
-# Function to verify the input password against the stored hash
-def verify_password(input_password, stored_hash):
-    return create_hash(input_password) == stored_hash
-
-if verify_password(decrypt_pass, passhash):
+if create_hash(input_password) == stored_hash:
     print("Password is correct!")
 else:
-    raise ValueError("Password is incorrect! Aborting!")
+    raise ValueError("Password is incorrect! Aborting!") # Fails to load if the password is wrong
 
-def derive_key_from_password(password):
-    # Use SHA-256 to hash the password and create a 256-bit key
-    hashed_password = hashlib.sha256(password.encode()).digest()
-    return base64.urlsafe_b64encode(hashed_password)
-
+# Decrypts the API key from secrets using the password
 def decrypt_api_key(encrypted_data, password):
-    key = derive_key_from_password(password)
+    key = base64.urlsafe_b64encode(hashlib.sha256(password.encode()).digest())
     fernet = Fernet(key)
     decrypted_api_key = fernet.decrypt(encrypted_data).decode()
     return decrypted_api_key
 
-# Replace these with your actual credentials
+# Loads in the API credentials
 CLIENT_ID = secrets_dict.get('api_id')
 CLIENT_SECRET = decrypt_api_key(secrets_dict.get('api_key'), decrypt_pass)
 
+# Callback URI after authorization on Concept2
 REDIRECT_URI = 'http://wp280.user.srcf.net/callback'
 
 # Authorization URL
@@ -149,6 +148,7 @@ USER_URL = 'https://log.concept2.com/api/users/me'
 # Token URL
 TOKEN_URL = 'https://log.concept2.com/oauth/access_token'
 
+# Function to flatten an input dataframe, used for loading data from the API
 def flatten_data(data):
         df = pd.json_normalize(data['data'])
 
@@ -178,16 +178,18 @@ def flatten_data(data):
 
         return df
 
+# Redirect empty requests to login
 @app.route('/')
 def default():
     resp = make_response(redirect(url_for('login')))
     return resp
 
+# Forbidden page - could be done more properly with exception handling!
 @app.route('/sorry')
 def sorry():
-    return('Sorry, you don\'t have access to this page!')
+    return('Sorry, you don\'t have access to this page!', 403)
 
-
+# Landing page
 @app.route('/login')
 def login():
     crsid = auth_decorator.principal
@@ -197,27 +199,17 @@ def login():
         crsid = args.get('crsid')
 
     if crsid not in authusers:
-        return(redirect(url_for('sorry')))
+        return(redirect(url_for('sorry'))) # bars non-authorised users from access
 
     file_path = f'data/{crsid}'
-    print(file_path)
 
-    print(f"Checking path: {file_path}")
-
-    # Check if the directory exists
+    # Check if the user already exists - which should have created a directory for their data
     if os.path.exists(file_path):
-        if os.path.isdir(file_path):
-            print(f"Directory {file_path} exists.")
-        else:
-            print(f"{file_path} exists but is not a directory.")
-    else:
-        print(f"Directory {file_path} does not exist.")
-
-    if os.path.exists(file_path):
-        token_path = f'{file_path}/token.txt'
+        token_path = f'{file_path}/token.txt' # Load in user token on login if it exists
 
         users_file = './data/users.crypt'
 
+        # Check if the user is listed on the users file, and if not, force a new login
         if os.path.exists(users_file):
             users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
             print(users_data)
@@ -234,6 +226,8 @@ def login():
         else:
             raise TypeError("Something has gone wrong - no users file found!")
 
+        # If the user has added their logbook account, then refresh the user access token
+        # TODO: Handle the refresh-token function in a dedicated way, only when the user requests data and is denied - using a ref argument to redirect back again
         if user_data['Logbook'][0] == True:
             if os.path.exists(token_path):
                 with open(token_path, 'rb') as file:
@@ -256,6 +250,8 @@ def login():
                 }
 
                 response = requests.get(USER_URL, headers=headers)  # Use GET to retrieve user data
+
+                # Do not refresh if the user token is still valid
                 if response.status_code == 200:
                     user_data = response.json()['data']
 
@@ -269,6 +265,8 @@ def login():
                     # Write the encrypted data to the file
                     with open(info_file, 'wb') as file:  # Note 'wb' mode for binary writing
                         file.write(encrypted_data)
+
+                # Otherwise get a new token
                 else:
                     refresh_token = token_data['refresh_token']
 
@@ -294,6 +292,7 @@ def login():
 
         resp = make_response(redirect(url_for('index')))
 
+    # Create a new user if there is no data for this user
     else:
         authorized = False
 
@@ -303,25 +302,27 @@ def login():
 
     return resp
 
+# Handle new user creation
 @app.route('/setup', methods=['GET', 'POST'])
 def setup():
 
     crsid = auth_decorator.principal
 
     if crsid not in authusers:
-        return(redirect(url_for('sorry')))
+        return(redirect(url_for('sorry'))) # TODO: automate this per request, in before_request?
 
     file_path = f'./data/{crsid}'
 
     args = request.args
 
+    # Handle user creation without a concept2 logbook account - though this isn't really the purpose of this site at this point anyway
     if 'no-logbook' in args:
 
         if request.method == 'POST':
 
             users_file = './data/users.crypt'
 
-            # Append new row to DataFrame
+            # Create a new empty user profile row
             new_row = pd.DataFrame([{
                 'crsid': crsid,
                 'First Name': request.form.get('first_name'),
@@ -349,7 +350,10 @@ def setup():
                     # Save the updated DataFrame back to the CSV file
                     crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
 
-                elif 'add-logbook' in args and crsid in users_data['crsid'].values: # adding a logbook after creation of a user
+                # To add a logbook after user creation: (TODO: Is this in the wrong place?)
+                elif 'add-logbook' in args and crsid in users_data['crsid'].values:
+
+                    # Check if a logbook id column exists, and create it if not
                     if 'logbook id' in users_data:
                         users_data[users_data['crsid'] == crsid]['logbook id'] = int(logid)
                     else:
@@ -357,13 +361,11 @@ def setup():
                         users_data[users_data['crsid'] == crsid]['logbook id'] = int(logid)
                     crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
 
-
+            # If there is no users file already, create it from the input
             else:
-                print(new_row)
-
-                # Save the updated DataFrame back to the CSV file
                 crp.to_encrypted(new_row, password = decrypt_pass, path=users_file)
 
+            # Create the personal data folder
             userpath = f'./data/{crsid}'
             if not os.path.exists(userpath):
                 os.makedirs(userpath)
@@ -372,10 +374,10 @@ def setup():
 
 
         else:
-            color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)]))
-            return(render_template(template_name_or_list='nologbook.html', crsid=crsid, color=color))
+            color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)])) # assign a random RGB color per user
+            return(render_template(template_name_or_list='nologbook.html', crsid=crsid, color=color)) # user creation template
 
-
+    # Account creation with a logbook referral
     else:
 
         token_path = f'{file_path}/token.txt'
@@ -386,9 +388,9 @@ def setup():
         with open(token_path, 'rb') as file:
             encrypted_data = file.read()
 
-        # Decrypt the data
         token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
 
+        # Using the access token, requests user information from concept2 which is used to set account data
         access_token = token_data['access_token']
 
         headers = {
@@ -396,7 +398,7 @@ def setup():
             'Content-Type': 'application/json'
         }
 
-        response = requests.get(USER_URL, headers=headers)  # Use GET to retrieve user data
+        response = requests.get(USER_URL, headers=headers)  # Retrieve data from the concept2 API
         if response.status_code == 200:
             user_data = response.json()['data']
 
@@ -492,9 +494,6 @@ def index():
         logbook = True
     else:
         logbook = False
-
-
-    welcome = user_data['First Name'] + " " + user_data['Last Name']
 
     if crsid in superusers:
         superuser = True
