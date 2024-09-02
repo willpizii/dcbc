@@ -59,7 +59,7 @@ auth_decorator = AuthDecorator(desc='DCBC Ergs')
 @app.before_request
 def check_authentication():
     # Skip authentication for the /coach route
-    if request.path.startswith('/static/') or request.path in ['/coach', '/coach/view', '/favicon.ico']:
+    if request.path.startswith('/static/') or request.path in ['/coach', '/coach/view', '/favicon.ico', '/webhook']:
         return None  # Allow the request to proceed without authentication
     # Otherwise, perform the authentication check
     return auth_decorator.before_request()
@@ -199,7 +199,19 @@ def login():
     if crsid not in authusers:
         return(redirect(url_for('sorry')))
 
-    file_path = f'./data/{crsid}'
+    file_path = f'data/{crsid}'
+    print(file_path)
+
+    print(f"Checking path: {file_path}")
+
+    # Check if the directory exists
+    if os.path.exists(file_path):
+        if os.path.isdir(file_path):
+            print(f"Directory {file_path} exists.")
+        else:
+            print(f"{file_path} exists but is not a directory.")
+    else:
+        print(f"Directory {file_path} does not exist.")
 
     if os.path.exists(file_path):
         token_path = f'{file_path}/token.txt'
@@ -209,7 +221,7 @@ def login():
         if os.path.exists(users_file):
             users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
             print(users_data)
-            if crsid in users_data['crsid']:
+            if crsid in users_data['crsid'].values:
                 user_data = users_data[users_data['crsid'] == crsid]
             else:
                 authorized = False
@@ -471,8 +483,6 @@ def index():
     else:
         user_data = users_data[users_data['crsid'] == crsid]
 
-        print(user_data, user_data['Logbook'])
-
     file_path = f'./data/{crsid}'
 
     if not os.path.exists(f'{file_path}/token.txt') and user_data['Logbook'][0] == True:
@@ -729,16 +739,137 @@ def load_all():
 
     return resp
 
-@app.route(f'/webhook', methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def webhook():
+    # Attempt to parse the incoming JSON
+    if request.is_json:
+        webhook_data = request.get_json()
 
-    if request.method == 'POST':
-        print(request.json)
-        print('webhook got activated!')
+        # Print the type of event and the result payload
+        event_type = webhook_data.get('type')
+        result = webhook_data.get('result')
 
-        print(request.form)
+        if event_type == 'result-added':
+            user_id = result.get('user_id')
+            users = './data/users.crypt'
 
-    return(request.json)
+            if not os.path.exists(users):
+                return redirect(url_for('setup'))
+
+            users_data = crp.read_encrypted(password = decrypt_pass, path=users)
+
+            if int(user_id) in users_data['logbook id'].values:
+                user_data = users_data[users_data['logbook id'] == user_id].to_dict(orient='records')
+                user_data = user_data[0]  # Get the first (and should be only) record
+
+                # Now extract the crsid
+                crsid = user_data['crsid']
+            else:
+                return "Invalid content type", 400
+
+            print(crsid)
+
+            # You can add further processing logic here
+            # For example, you can store the result data in a database or trigger other actions
+
+            df = pd.json_normalize(result)
+
+            if 'workout' in df.columns:
+                if 'intervals' in df['workout'][0]:
+                    intervals_df = pd.json_normalize(
+                        [item for sublist in df['workout'].apply(lambda x: x.get('intervals', [])) for item in sublist],
+                        sep='_'
+                    )
+                else:
+                    intervals_df = pd.DataFrame()
+
+                if 'splits' in df['workout'][0]:
+                    splits_df = pd.json_normalize(
+                        [item for sublist in df['workout'].apply(lambda x: x.get('splits', [])) for item in sublist],
+                        sep='_'
+                    )
+                else:
+                    splits_df = pd.DataFrame()
+
+                df = df.drop(columns=['workout'])
+                df = pd.concat([df, intervals_df, splits_df], axis=1)
+
+
+            csv_file_path = f'data/{crsid}/workout_data.crypt'
+
+            if 'date' in df:
+                df['date'] = pd.to_datetime(df['date'],format='ISO8601')
+
+            df = df.dropna(axis=1, how='all')
+
+            # Function to check if the 'heart_rate' field in 'workout.splits' is empty or malformed
+            def clean_empties(value):
+                if isinstance(value, dict):
+                    # Clean and filter the dictionary
+                    return {
+                        k: clean_empties(v)
+                        for k, v in value.items()
+                        if clean_empties(v)  # Keep only non-empty values
+                    }
+                elif isinstance(value, list):
+                    # Clean and filter the list
+                    return [clean_empties(v) for v in value if clean_empties(v)]  # Keep only non-empty values
+                return value
+
+            # Usage example:
+            df = df.applymap(clean_empties)
+            print(df)
+
+            existingdf = crp.read_encrypted(path=csv_file_path, password=decrypt_pass)
+
+            for column in existingdf.columns:
+                if column not in df.columns:
+                    df[column] = pd.NA
+
+            # Reorder the columns in new_df to match the order in existingdf
+            df = df[existingdf.columns]
+
+            # Perform the merge operation
+            merged_df = pd.concat([existingdf, df], ignore_index=True)
+
+            crp.to_encrypted(merged_df, path=csv_file_path, password=decrypt_pass)
+
+            return "Result successfully added and logged", 200
+
+        elif event_type == 'result-updated':
+            print(result)
+            return "Not implemented", 200
+
+        else:
+            print(webhook_data)
+            result_id = webhook_data.get('result_id')
+
+            users_file = './data/users.crypt'
+            users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
+
+            crsids = users_data['crsid'].values
+
+            for crsid in crsids:
+                user_path = f'./data/{crsid}'
+
+                if not os.path.exists(f'{user_path}/workout_data.crypt'):
+                    continue
+
+                userdf = crp.read_encrypted(password = decrypt_pass, path=f'{user_path}/workout_data.crypt')
+
+                if result_id in userdf['id'].values:
+                    userdf = userdf[userdf['id'] != result_id]
+                    crp.to_encrypted(userdf, password = decrypt_pass, path=f'{user_path}/workout_data.crypt')
+                    print(f"Deleted result {result_id} from user {crsid}")
+                    return f"Deleted result {result_id} from user {crsid}", 200
+
+                else:
+                    continue
+
+            return "Result Not Found", 200
+    else:
+        print("Received non-JSON Payload")
+        return "Invalid content type", 400
 
 
 @app.route(f'/plot', methods=['GET', 'POST'])
