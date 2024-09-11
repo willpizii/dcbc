@@ -38,8 +38,14 @@ from cryptography.fernet import Fernet
 import cryptpandas as crp
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+from models.workout import Workout, Base  # Import from models.py
+
 class R(flask.Request):
-    trusted_hosts = {'localhost', '127.0.0.1', 'wp280.user.srcf.net'}
+    trusted_hosts = {'wp280.user.srcf.net'}
 
 app = Flask(__name__)
 app.request_class = R
@@ -51,6 +57,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(
     app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
 )
+
 
 # Initialize the AuthDecorator
 auth_decorator = AuthDecorator(desc='DCBC Ergs')
@@ -120,7 +127,7 @@ def create_hash(password):
     password_hash = hash_object.hexdigest()
     return password_hash
 
-if create_hash(input_password) == stored_hash:
+if create_hash(decrypt_pass) == passhash:
     print("Password is correct!")
 else:
     raise ValueError("Password is incorrect! Aborting!") # Fails to load if the password is wrong
@@ -136,6 +143,15 @@ def decrypt_api_key(encrypted_data, password):
 CLIENT_ID = secrets_dict.get('api_id')
 CLIENT_SECRET = decrypt_api_key(secrets_dict.get('api_key'), decrypt_pass)
 
+# Connect to MySQL DB through SQLalchemy
+SQL_PASS = secrets_dict.get('sql_pass')
+
+engine = create_engine(f'mysql+pymysql://wp280:{SQL_PASS}@squirrel/wp280')
+Base.metadata.create_all(engine)
+
+Session = sessionmaker(bind=engine)
+session = Session()
+
 # Callback URI after authorization on Concept2
 REDIRECT_URI = 'http://wp280.user.srcf.net/callback'
 
@@ -148,35 +164,34 @@ USER_URL = 'https://log.concept2.com/api/users/me'
 # Token URL
 TOKEN_URL = 'https://log.concept2.com/oauth/access_token'
 
-# Function to flatten an input dataframe, used for loading data from the API
 def flatten_data(data):
-        df = pd.json_normalize(data['data'])
+    df = pd.json_normalize(data['data'])
 
-        if 'workout' in df.columns:
-            if 'intervals' in df['workout'][0]:
-                intervals_df = pd.json_normalize(
-                    [item for sublist in df['workout'].apply(lambda x: x.get('intervals', [])) for item in sublist],
-                    sep='_'
-                )
-            else:
-                intervals_df = pd.DataFrame()
+    if 'workout' in df.columns:
+        if 'intervals' in df['workout'][0]:
+            intervals_df = pd.json_normalize(
+                [item for sublist in df['workout'].apply(lambda x: x.get('intervals', [])) for item in sublist],
+                sep='_'
+            )
+        else:
+            intervals_df = pd.DataFrame()
 
-            if 'splits' in df['workout'][0]:
-                splits_df = pd.json_normalize(
-                    [item for sublist in df['workout'].apply(lambda x: x.get('splits', [])) for item in sublist],
-                    sep='_'
-                )
-            else:
-                splits_df = pd.DataFrame()
+        if 'splits' in df['workout'][0]:
+            splits_df = pd.json_normalize(
+                [item for sublist in df['workout'].apply(lambda x: x.get('splits', [])) for item in sublist],
+                sep='_'
+            )
+        else:
+            splits_df = pd.DataFrame()
 
-            df = df.drop(columns=['workout'])
-            df = pd.concat([df, intervals_df, splits_df], axis=1)
+        df = df.drop(columns=['workout'])
+        df = pd.concat([df, intervals_df, splits_df], axis=1)
 
-        if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'],format='ISO8601')
-            df = df.sort_values(by='date', ascending=True)
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'],format='ISO8601')
+        df = df.sort_values(by='date', ascending=True)
 
-        return df
+    return df
 
 # Redirect empty requests to login
 @app.route('/')
@@ -576,6 +591,7 @@ def callback():
 
         return resp
 
+# Update to SQL Handling
 @app.route(f'/load_all')
 def load_all():
 
@@ -608,8 +624,7 @@ def load_all():
 
     data_params = {
         "from": '2000-01-01',
-        "to": '2040-01-01',
-        "type": "rower"
+        "to": '2040-01-01'
     }
 
     data_url = "https://log.concept2.com/api/users/me/results"
@@ -653,6 +668,11 @@ def load_all():
 
     # return redirect(url_for('index'))
 
+    # PANDAS Version!
+
+    print(dataresponse.get('data'))
+
+    data_json = dataresponse.get('data')
 
     df = flatten_data(dataresponse)
     print(df)
@@ -677,6 +697,9 @@ def load_all():
             df = df.drop_duplicates(subset='id')
 
             len_recover = len(flatten_data(dataresponse))
+
+            this_json = dataresponse.get('data')
+            data_json += this_json
 
     csv_file_path = f'{file_path}/workout_data.crypt'
 
@@ -733,6 +756,50 @@ def load_all():
     print(df)
 
     crp.to_encrypted(df, path=csv_file_path, password=decrypt_pass)
+
+    # SQL Version!
+
+    from models.workout import Workout, Base
+
+    allowed_keys = {'id', 'user_id', 'date', 'distance', 'type', 'time', 'comments', 'heart_rate', 'stroke_rate', 'stroke_data'}
+
+    workouts = data_json
+    print(workouts)
+
+    for workout_data in workouts:
+        filtered_workout_data = {
+            "id": workout_data.get("id"),
+            "user_id": workout_data.get("user_id"),
+            "date": workout_data.get("date", None),  # Use None as a default
+            "distance": workout_data.get("distance", None),
+            "type": workout_data.get("type", None),
+            "time": workout_data.get("time", None),
+            "spm": workout_data.get("stroke_rate", None),
+            "avghr": workout_data.get("heart_rate", {}).get("average", None),
+            "comments": workout_data.get("comments", None),    # If missing, default to None
+            "stroke_data": workout_data.get("stroke_data", False)
+        }
+
+        # Convert date string to datetime object if it's not None
+        if filtered_workout_data["date"]:
+            filtered_workout_data["date"] = datetime.strptime(filtered_workout_data["date"], "%Y-%m-%d %H:%M:%S")
+
+        existing_workout = session.query(Workout).filter_by(id=filtered_workout_data['id']).first()
+        if existing_workout:
+            print(f"Record with id {filtered_workout_data['id']} already exists. Skipping insertion.")
+            continue  # Skip this record
+
+        # Create Workout object with the filtered data
+        new_workout = Workout(**filtered_workout_data)
+
+        # Add to session
+        session.add(new_workout)
+
+    # Commit all inserts to the database
+    session.commit()
+
+
+    # End Versioning
 
     resp = make_response(redirect(url_for('setup')))
 
@@ -1006,7 +1073,7 @@ def plot():
         '@date_day': 'datetime',  # use 'datetime' formatter for '@date_day' field
     }, mode='mouse',renderers=[p1.renderers[1]])
 
-    callback = CustomJS(args={'source': source, 'user':user, 'crsid':crsid}, code="""
+    callback = CustomJS(args={'source': source, 'crsid':crsid}, code="""
         console.log('CustomJS callback triggered');
 
         // Access the ColumnDataSource
