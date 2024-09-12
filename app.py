@@ -38,11 +38,13 @@ from cryptography.fernet import Fernet
 import cryptpandas as crp
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-from models.workout import Workout, Base  # Import from models.py
+from models.workout import Workout # Import from models.py
+from models.usersdb import User
+from models.base import Base
 
 class R(flask.Request):
     trusted_hosts = {'wp280.user.srcf.net'}
@@ -222,28 +224,17 @@ def login():
     if os.path.exists(file_path):
         token_path = f'{file_path}/token.txt' # Load in user token on login if it exists
 
-        users_file = './data/users.crypt'
+        user = session.execute(select(User).where(User.crsid == crsid)).scalars().first()
 
-        # Check if the user is listed on the users file, and if not, force a new login
-        if os.path.exists(users_file):
-            users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
-            print(users_data)
-            if crsid in users_data['crsid'].values:
-                user_data = users_data[users_data['crsid'] == crsid]
-            else:
-                authorized = False
-
-                resp = (make_response(render_template(
-                    template_name_or_list='welcome.html',
-                    crsid = crsid, authorized=authorized)))
-
-                return resp
+        # Initialize the dictionary with user data from the database
+        if user:
+            user_data = {column.name: getattr(user, column.name) for column in User.__table__.columns}
         else:
-            raise TypeError("Something has gone wrong - no users file found!")
+            return render_template(template_name_or_list='welcome.html',crsid = crsid, authorized=False)
 
         # If the user has added their logbook account, then refresh the user access token
         # TODO: Handle the refresh-token function in a dedicated way, only when the user requests data and is denied - using a ref argument to redirect back again
-        if user_data['Logbook'][0] == True:
+        if user_data['logbook'] == True:
             if os.path.exists(token_path):
                 with open(token_path, 'rb') as file:
                     encrypted_data = file.read()
@@ -309,15 +300,12 @@ def login():
 
     # Create a new user if there is no data for this user
     else:
-        authorized = False
-
-        resp = (make_response(render_template(
-            template_name_or_list='welcome.html',
-            crsid = crsid, authorized=authorized)))
+        resp = (make_response(render_template(template_name_or_list='welcome.html', crsid = crsid, authorized=False)))
 
     return resp
 
 # Handle new user creation
+# Updated(!) to store user data in a SQL table - except tokens, for now at least
 @app.route('/setup', methods=['GET', 'POST'])
 def setup():
 
@@ -335,66 +323,46 @@ def setup():
 
         if request.method == 'POST':
 
-            users_file = './data/users.crypt'
+            user_data = {
+                "crsid": str(crsid),
+                "first_name": request.form.get("first_name"),
+                "last_name": request.form.get("last_name"),
+                "logbookid": request.form.get("id"),
+                "color": request.form.get('color'),
+                "preferred_name": request.form.get("preferred_name"),
+                'squad': request.form.get('squad'),
+                'bowside': request.form.get('bowside'),
+                'strokeside': request.form.get('strokeside'),
+                'cox': request.form.get('coxing'),
+                'sculling': request.form.get('sculling'),
+                'years_rowing': request.form.get('years_rowing'),
+                'year': request.form.get('year'),
+                'subject': request.form.get('subject'),
+                "logbook": False
+            }
 
-            # Create a new empty user profile row
-            new_row = pd.DataFrame([{
-                'crsid': crsid,
-                'First Name': request.form.get('first_name'),
-                'Last Name': request.form.get('last_name'),
-                'color': request.form.get('color'),
-                'Preferred Name': request.form.get('preferred_name'),
-                'Squad': request.form.get('squad'),
-                'Bowside': request.form.get('bowside'),
-                'Strokeside': request.form.get('strokeside'),
-                'Coxing': request.form.get('coxing'),
-                'Sculling': request.form.get('sculling'),
-                'Years Rowing': request.form.get('years_rowing'),
-                'Year': request.form.get('year'),
-                'Subject': request.form.get('subject'),
-                'Logbook': False
-            }])
+            # Create user object with the filtered data
+            new_user = User(**user_data)
 
-            if os.path.exists(users_file):
-                users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
+            # Add (safely) to session
+            session.merge(new_user)
 
-                # Append new row to DataFrame using pd.concat
-                if crsid not in users_data['crsid'].values:
-                    users_data = pd.concat([users_data, new_row], ignore_index=True)
+            # Commit all inserts to the database
+            session.commit()
 
-                    # Save the updated DataFrame back to the CSV file
-                    crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
-
-                # To add a logbook after user creation: (TODO: Is this in the wrong place?)
-                elif 'add-logbook' in args and crsid in users_data['crsid'].values:
-
-                    # Check if a logbook id column exists, and create it if not
-                    if 'logbook id' in users_data:
-                        users_data[users_data['crsid'] == crsid]['logbook id'] = int(logid)
-                    else:
-                        users_data['logbook id'] = None
-                        users_data[users_data['crsid'] == crsid]['logbook id'] = int(logid)
-                    crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
-
-            # If there is no users file already, create it from the input
-            else:
-                crp.to_encrypted(new_row, password = decrypt_pass, path=users_file)
-
-            # Create the personal data folder
+            # Create the personal data folder [ FOR NOW? TODO]
             userpath = f'./data/{crsid}'
             if not os.path.exists(userpath):
                 os.makedirs(userpath)
 
             return(redirect(url_for('index')))
 
-
-        else:
-            color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)])) # assign a random RGB color per user
-            return(render_template(template_name_or_list='nologbook.html', crsid=crsid, color=color)) # user creation template
+        color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)])) # assign a random RGB color per user
+        return(render_template(template_name_or_list='nologbook.html', crsid=crsid, color=color)) # user creation template
 
     # Account creation with a logbook referral
     else:
-
+        # This is going to need replacing, but it is low priority - would rather keep these encrypted like this for now
         token_path = f'{file_path}/token.txt'
 
         if not os.path.exists(token_path):
@@ -416,96 +384,130 @@ def setup():
         response = requests.get(USER_URL, headers=headers)  # Retrieve data from the concept2 API
         if response.status_code == 200:
             user_data = response.json()['data']
-
-            info_file = f'./data/{crsid}/user_info.txt'
-
-            user_data_json = json.dumps(user_data)
-
-            # Encrypt the JSON string
-            encrypted_data = datacipher.encrypt(user_data_json.encode())
-
-            # Write the encrypted data to the file
-            with open(info_file, 'wb') as file:  # Note 'wb' mode for binary writing
-                file.write(encrypted_data)
-
-            logid = user_data['id']
-            first_name = user_data['first_name']
-            last_name = user_data['last_name']
-            color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)]))
-
-            # Load the users DataFrame
-            users_file = './data/users.crypt'
-
-            if os.path.exists(users_file):
-                users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
-
-                # Append new row to DataFrame using pd.concat
-                if crsid not in users_data['crsid'].values:
-                    new_row = pd.DataFrame([{
-                        'crsid': str(crsid),
-                        'First Name': str(first_name),
-                        'Last Name': str(last_name),
-                        'logbook id': int(logid),
-                        'color': str(color),
-                        'Preferred Name': str(first_name),
-                        'Logbook': True
-                    }])
-
-                    users_data = pd.concat([users_data, new_row], ignore_index=True)
-
-                    # Save the updated DataFrame back to the CSV file
-                    crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
-
-                else: # adding a logbook after creation of a user
-                    if users_data[users_data['crsid'] == crsid]['Logbook'][0] == False:
-                        print(users_data[users_data['crsid'] == crsid]['Logbook'], logid)
-                        users_data.loc[users_data['crsid'] == crsid, 'Logbook'] = True
+            color = str("#"+''.join([random.choice('ABCDEF0123456789') for i in range(6)])) # Give each user a random color!
 
 
-                        if 'logbook id' in users_data:
-                            users_data.loc[users_data['crsid'] == crsid, 'logbook id'] = int(logid)
-                        else:
-                            users_data['logbook id'] = None
-                            users_data.loc[users_data['crsid'] == crsid, 'logbook id'] = int(logid)
-                        crp.to_encrypted(users_data, password = decrypt_pass, path=users_file)
-                        print(users_data[users_data['crsid'] == crsid]['Logbook'], logid, users_data[users_data['crsid'] == crsid]['logbook id'])
 
+            # Add the user to the SQL DB
+            if not session.execute(select(exists().where(User.crsid == crsid))).scalar():
+                user_data = {
+                    "crsid": str(crsid),
+                    "first_name": user_data.get("first_name"),
+                    "last_name": user_data.get("last_name"),
+                    "logbookid": user_data.get("id"),
+                    "color": str(color),
+                    "preferred_name": user_data.get("first_name"),
+                    "logbook": True
+                }
 
-            else:
-                print(new_row)
+                # Create user object with the filtered data
+                new_user = User(**user_data)
 
-                # Save the updated DataFrame back to the CSV file
-                crp.to_encrypted(new_row, password = decrypt_pass, path=users_file)
+                # Merge to session
+                session.merge(new_user)
 
+                # Commit all inserts to the database
+                session.commit()
+
+            else: # adding a logbook after creation of a user - only change the logbook fields
+                if (logbook_value := session.execute(select(User.logbook).where(User.crsid == crsid)).scalar()) == False:
+
+                    user_data = {
+                        "crsid": str(crsid),
+                        "logbookid": user_data.get("id"),
+                        "logbook": True
+                    }
+
+                    # Create user object with the filtered data
+                    new_user = User(**user_data)
+
+                    # Merge to session
+                    session.merge(new_user)
+
+                    # Commit all inserts to the database
+                    session.commit()
 
             return(redirect(url_for('user_settings')))
         else:
             return(redirect(url_for('authorize')))
 
+# Updated for SQL
+@app.route('/user_settings', methods=['GET','POST'])
+def user_settings():
+    crsid = auth_decorator.principal
+
+    superuser = superuser_check(crsid, superusers)
+
+    # Check if the user exists in the database
+
+    if not session.execute(select(exists().where(User.crsid == crsid))).scalar():
+        return redirect(url_for('setup'))
+
+    # If receiving a POST request, update the DB do that the correct values are displayed
+
+    if request.method == 'POST':
+        user_data = {
+            'crsid': str(crsid),
+            'logbookid': request.form.get('logid'),
+            "first_name": request.form.get('first_name'),
+            "last_name": request.form.get('last_name'),
+            "color": request.form.get('color'),
+            "preferred_name": request.form.get('preferred_name'),
+            'squad': request.form.get('squad'),
+            'bowside': request.form.get('bowside'),
+            'strokeside': request.form.get('strokeside'),
+            'cox': request.form.get('coxing'),
+            'sculling': request.form.get('sculling'),
+            'years_rowing': request.form.get('years_rowing'),
+            'year': request.form.get('year'),
+            'subject': request.form.get('subject')
+        }
+
+        # Create user object with the filtered data
+        new_user = User(**user_data)
+
+        # Merge to session
+        session.merge(new_user)
+
+        # Commit all inserts to the database
+        session.commit()
+
+    # Pull values for crsid from DB to display
+
+    user = session.execute(select(User).where(User.crsid == crsid)).scalars().first()
+
+    # Initialize the dictionary with user data from the database
+    if user:
+        personal_data = {column.name: getattr(user, column.name) for column in User.__table__.columns}
+    else:
+        personal_data = {column.name: None for column in User.__table__.columns}
+
+    # Ensure 'crsid' is included in the dictionary
+    personal_data['crsid'] = str(crsid)
+
+    return(render_template(
+        template_name_or_list='user.html',
+        club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'),
+        authorize = url_for('authorize'), captains = url_for('captains'), superuser=superuser,
+        personal_data = personal_data))
 
 @app.route('/home')
 def index():
 
     crsid = auth_decorator.principal
 
-    users = './data/users.crypt'
-
-    if not os.path.exists(users):
-        return redirect(url_for('setup'))
-
-    users_data = crp.read_encrypted(password = decrypt_pass, path=users)
-
-    if str(crsid) not in users_data['crsid'].values:
+    if not session.execute(select(exists().where(User.crsid == crsid))).scalar():
         return redirect(url_for('setup'))
     else:
-        user_data = users_data[users_data['crsid'] == crsid]
+        user = session.execute(select(User).where(User.crsid == crsid)).scalars().first()
+        user_data = {column.name: getattr(user, column.name) for column in User.__table__.columns}
 
     file_path = f'./data/{crsid}'
 
-    if not os.path.exists(f'{file_path}/token.txt') and user_data['Logbook'][0] == True:
+    if not os.path.exists(f'{file_path}/token.txt') and user_data.get('logbook') == True:
         return(redirect(url_for('authorize')))
 
-    if user_data['Logbook'][0] == True:
+    if user_data['logbook'] == True:
         logbook = True
     else:
         logbook = False
@@ -532,6 +534,7 @@ def authorize():
     auth_url = f"{AUTH_URL}?{query_string}"
     return redirect(auth_url)
 
+# Updated to SQL Handling
 @app.route(f'/callback')
 def callback():
     code = request.args.get('code')
@@ -566,20 +569,16 @@ def callback():
     with open(token_path, 'wb') as file:  # Note 'wb' mode for binary writing
         file.write(encrypted_data)
 
-    access_token = token_data.get('access_token')
-    refresh_token = token_data.get('refresh_token')
-    expires_in = token_data.get('expires_in')
+    logbookid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-    file_path = f'{userpath}/workout_data.crypt'
-
-    if os.path.exists(file_path):
-        df = crp.read_encrypted(password = decrypt_pass, path=file_path)
-        length_wd = len(df)
+    # Check if any rows exist with the given logbook id, and if so find the length
+    if session.execute(select(Workout).where(Workout.user_id == logbookid)).first() is not None:
+        length_wd = session.execute(select(func.count()).where(Workout.user_id == logbookid)).scalar()
 
         resp = make_response(render_template_string('''
             <h1>Reload Data?</h1>
             <p>You have already previously loaded data, and you have {{ length_wd }} workouts loaded </p>
-            <p><b>New workouts will (eventually, when I implement it) sync automatically!</b></p>
+            <p><b>New workouts will sync automatically!</b></p>
             <p><a href = "{{ url_for('load_all') }}"> I'm sure, load data</a></p>
             <p><a href = "{{ url_for('index') }}">Go Home</a></p>
         ''', length_wd = length_wd))
@@ -591,7 +590,7 @@ def callback():
 
         return resp
 
-# Update to SQL Handling
+# Updated to SQL Handling
 @app.route(f'/load_all')
 def load_all():
 
@@ -611,6 +610,8 @@ def load_all():
 
         # Decrypt the data
         token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
+
+    print(token_data)
 
     access_token = token_data['access_token']
     refresh_token = token_data['refresh_token']
@@ -666,22 +667,13 @@ def load_all():
         if 'data' not in dataresponse:
             return(f'error - response is {dataresponse["status_code"]}, expected 200')
 
-    # return redirect(url_for('index'))
-
-    # PANDAS Version!
-
-    print(dataresponse.get('data'))
-
     data_json = dataresponse.get('data')
 
-    df = flatten_data(dataresponse)
-    print(df)
-
-    if len(df) == 50:
+    if len(data_json) == 50:
         len_recover = 50
 
         while len_recover != 1:
-            old_set = df['date'].min()
+            old_set = data_json[-1].get('date')
 
             data_params = {
             "from": '2000-01-01',
@@ -693,69 +685,10 @@ def load_all():
 
             dataresponse = response.json()
 
-            df = pd.concat([df, flatten_data(dataresponse)])
-            df = df.drop_duplicates(subset='id')
-
             len_recover = len(flatten_data(dataresponse))
 
             this_json = dataresponse.get('data')
             data_json += this_json
-
-    csv_file_path = f'{file_path}/workout_data.crypt'
-
-    if 'date' in df:
-        df['date'] = pd.to_datetime(df['date'],format='ISO8601')
-    else:
-        return(render_template_string('''<h1>Your Logbook is empty!</h1>'''))
-
-    df = df.sort_values('date')
-    df = df.dropna(axis=1, how='all')
-
-    for column in df.columns:
-        try:
-            # Attempt to create a Parquet-compatible PyArrow Table for this single column
-            single_column_df = df[[column]]
-            pa.Table.from_pandas(single_column_df)
-
-        except pa.lib.ArrowNotImplementedError:
-            # If it fails due to an ArrowNotImplementedError, drop the column
-            print(f"Dropping column {column} due to failure in Parquet conversion.")
-            df = df.drop(columns=[column])
-
-    struct_columns = [col.split('.')[0] for col in df.columns if '.' in col]
-    struct_columns = list(set(struct_columns))  # Remove duplicates
-
-    # Check and drop problematic structs
-    for struct_col in struct_columns:
-        try:
-            # Attempt to create a PyArrow Table for the entire struct
-            struct_df = df[[col for col in df.columns if col.startswith(struct_col)]]
-            pa.Table.from_pandas(struct_df)
-
-        except pa.lib.ArrowNotImplementedError:
-            # Drop all columns related to the problematic struct
-            print(f"Dropping struct {struct_col} due to failure in Parquet conversion.")
-            df = df.drop(columns=[col for col in df.columns if col.startswith(struct_col)])
-
-    # Function to check if the 'heart_rate' field in 'workout.splits' is empty or malformed
-    def clean_empties(value):
-        if isinstance(value, dict):
-            # Clean and filter the dictionary
-            return {
-                k: clean_empties(v)
-                for k, v in value.items()
-                if clean_empties(v)  # Keep only non-empty values
-            }
-        elif isinstance(value, list):
-            # Clean and filter the list
-            return [clean_empties(v) for v in value if clean_empties(v)]  # Keep only non-empty values
-        return value
-
-    # Usage example:
-    df = df.applymap(clean_empties)
-    print(df)
-
-    crp.to_encrypted(df, path=csv_file_path, password=decrypt_pass)
 
     # SQL Version!
 
@@ -764,7 +697,6 @@ def load_all():
     allowed_keys = {'id', 'user_id', 'date', 'distance', 'type', 'time', 'comments', 'heart_rate', 'stroke_rate', 'stroke_data'}
 
     workouts = data_json
-    print(workouts)
 
     for workout_data in workouts:
         filtered_workout_data = {
@@ -773,6 +705,7 @@ def load_all():
             "date": workout_data.get("date", None),  # Use None as a default
             "distance": workout_data.get("distance", None),
             "type": workout_data.get("type", None),
+            "workout_type": workout_data.get("workout_type", None),
             "time": workout_data.get("time", None),
             "spm": workout_data.get("stroke_rate", None),
             "avghr": workout_data.get("heart_rate", {}).get("average", None),
@@ -793,18 +726,14 @@ def load_all():
         new_workout = Workout(**filtered_workout_data)
 
         # Add to session
-        session.add(new_workout)
+        session.merge(new_workout)
 
     # Commit all inserts to the database
     session.commit()
 
+    return redirect(url_for('setup'))
 
-    # End Versioning
-
-    resp = make_response(redirect(url_for('setup')))
-
-    return resp
-
+# Updated to SQL Handling - should be and was easy
 @app.route('/webhook', methods=['POST'])
 def webhook():
     # Attempt to parse the incoming JSON
@@ -813,131 +742,51 @@ def webhook():
 
         # Print the type of event and the result payload
         event_type = webhook_data.get('type')
-        result = webhook_data.get('result')
 
-        if event_type == 'result-added':
-            user_id = result.get('user_id')
-            users = './data/users.crypt'
+        if event_type != 'result-deleted':
+            workout_data = webhook_data.get('result')
 
-            if not os.path.exists(users):
-                return redirect(url_for('setup'))
+            filtered_workout_data = {
+                "id": workout_data.get("id"),
+                "user_id": workout_data.get("user_id"),
+                "date": workout_data.get("date", None),  # Use None as a default
+                "distance": workout_data.get("distance", None),
+                "type": workout_data.get("type", None),
+                "workout_type": workout_data.get("workout_type", None),
+                "time": workout_data.get("time", None),
+                "spm": workout_data.get("stroke_rate", None),
+                "avghr": workout_data.get("heart_rate", {}).get("average", None),
+                "comments": workout_data.get("comments", None),    # If missing, default to None
+                "stroke_data": workout_data.get("stroke_data", False)
+            }
 
-            users_data = crp.read_encrypted(password = decrypt_pass, path=users)
+            # Convert date string to datetime object if it's not None
+            if filtered_workout_data["date"]:
+                filtered_workout_data["date"] = datetime.strptime(filtered_workout_data["date"], "%Y-%m-%d %H:%M:%S")
 
-            if int(user_id) in users_data['logbook id'].values:
-                user_data = users_data[users_data['logbook id'] == user_id].to_dict(orient='records')
-                user_data = user_data[0]  # Get the first (and should be only) record
+            # Create Workout object with the filtered data
+            new_workout = Workout(**filtered_workout_data)
 
-                # Now extract the crsid
-                crsid = user_data['crsid']
-            else:
-                return "Invalid content type", 400
+            # Add to session
+            session.merge(new_workout)
 
-            print(crsid)
-
-            # You can add further processing logic here
-            # For example, you can store the result data in a database or trigger other actions
-
-            df = pd.json_normalize(result)
-
-            if 'workout' in df.columns:
-                if 'intervals' in df['workout'][0]:
-                    intervals_df = pd.json_normalize(
-                        [item for sublist in df['workout'].apply(lambda x: x.get('intervals', [])) for item in sublist],
-                        sep='_'
-                    )
-                else:
-                    intervals_df = pd.DataFrame()
-
-                if 'splits' in df['workout'][0]:
-                    splits_df = pd.json_normalize(
-                        [item for sublist in df['workout'].apply(lambda x: x.get('splits', [])) for item in sublist],
-                        sep='_'
-                    )
-                else:
-                    splits_df = pd.DataFrame()
-
-                df = df.drop(columns=['workout'])
-                df = pd.concat([df, intervals_df, splits_df], axis=1)
-
-
-            csv_file_path = f'data/{crsid}/workout_data.crypt'
-
-            if 'date' in df:
-                df['date'] = pd.to_datetime(df['date'],format='ISO8601')
-
-            df = df.dropna(axis=1, how='all')
-
-            # Function to check if the 'heart_rate' field in 'workout.splits' is empty or malformed
-            def clean_empties(value):
-                if isinstance(value, dict):
-                    # Clean and filter the dictionary
-                    return {
-                        k: clean_empties(v)
-                        for k, v in value.items()
-                        if clean_empties(v)  # Keep only non-empty values
-                    }
-                elif isinstance(value, list):
-                    # Clean and filter the list
-                    return [clean_empties(v) for v in value if clean_empties(v)]  # Keep only non-empty values
-                return value
-
-            # Usage example:
-            df = df.applymap(clean_empties)
-            print(df)
-
-            existingdf = crp.read_encrypted(path=csv_file_path, password=decrypt_pass)
-
-            for column in existingdf.columns:
-                if column not in df.columns:
-                    df[column] = pd.NA
-
-            # Reorder the columns in new_df to match the order in existingdf
-            df = df[existingdf.columns]
-
-            # Perform the merge operation
-            merged_df = pd.concat([existingdf, df], ignore_index=True)
-
-            crp.to_encrypted(merged_df, path=csv_file_path, password=decrypt_pass)
-
-            return "Result successfully added and logged", 200
-
-        elif event_type == 'result-updated':
-            print(result)
-            return "Not implemented", 200
+            # Commit all inserts to the database
+            session.commit()
+            webhook_data = request.get_json()
 
         else:
-            print(webhook_data)
             result_id = webhook_data.get('result_id')
 
-            users_file = './data/users.crypt'
-            users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
+            session.execute(delete(Workout).where(Workout.id == result_id))
+            session.commit()
 
-            crsids = users_data['crsid'].values
+        return "Result updated", 200
 
-            for crsid in crsids:
-                user_path = f'./data/{crsid}'
-
-                if not os.path.exists(f'{user_path}/workout_data.crypt'):
-                    continue
-
-                userdf = crp.read_encrypted(password = decrypt_pass, path=f'{user_path}/workout_data.crypt')
-
-                if result_id in userdf['id'].values:
-                    userdf = userdf[userdf['id'] != result_id]
-                    crp.to_encrypted(userdf, password = decrypt_pass, path=f'{user_path}/workout_data.crypt')
-                    print(f"Deleted result {result_id} from user {crsid}")
-                    return f"Deleted result {result_id} from user {crsid}", 200
-
-                else:
-                    continue
-
-            return "Result Not Found", 200
     else:
         print("Received non-JSON Payload")
         return "Invalid content type", 400
 
-
+# Updated to SQL! Errors might need testing
 @app.route(f'/plot', methods=['GET', 'POST'])
 def plot():
 
@@ -961,15 +810,19 @@ def plot():
 
     file_path = f'./data/{crsid}'
 
-    users_file = './data/users.crypt'
-    users = crp.read_encrypted(password = decrypt_pass, path=users_file)
+    logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-    if not os.path.exists(file_path):
-        if crsid not in users['crsid'].values and otherview:
+    query = select(Workout).where(Workout.user_id == logid)
+
+    # Use pandas to read the query result into a DataFrame
+    df = pd.read_sql(query, engine)
+
+    if logid is None:
+        if session.execute(select(User.crsid).where(User.crsid == crsid)).scalars().first() is None and otherview:
             return(render_template(
                 template_name_or_list='plot.html',
                 script=[''],
-                div=[f' <p>No specified user found!<a href={ url_for("index")}> Return to home </a></p>'],
+                div=[f' <p>No specified user <b>{crsid}</b> found!<a href={ url_for("index")}> Return to home </a></p>'],
                 otherview=otherview, crsid=crsid,
                 club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
@@ -980,8 +833,8 @@ def plot():
             otherview=otherview, crsid=crsid,
             club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
-    if not os.path.exists(f'{file_path}/workout_data.crypt'):
-        if crsid not in users['crsid'].values and otherview:
+    if df is None:
+        if session.execute(select(User.crsid).where(User.crsid == crsid)).scalars().first() is None and otherview:
             return(render_template(
                 template_name_or_list='plot.html',
                 script=[''],
@@ -995,8 +848,6 @@ def plot():
             div=[f'No data found! Check you have logged some ergs before coming here. <p><a href={ url_for("index")}> Return to home </a></p>'],
             otherview=otherview, crsid=crsid,
             club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
-
-    df = crp.read_encrypted(path=f'{file_path}/workout_data.crypt',password=decrypt_pass)
 
     df['date'] = pd.to_datetime(df['date'])
     df['distance'] = pd.to_numeric(df['distance'], errors='coerce')
@@ -1109,22 +960,25 @@ def plot():
         df=df, otherview=otherview, crsid=crsid, superuser=superuser,
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
+# Updated to SQL
 @app.route('/data')
 def data():
     crsid = auth_decorator.principal
 
     args = request.args
 
+    superuser=False
     if superuser_check(crsid, superusers):
+        superuser=True
         if 'crsid' in args:
             crsid = args.get('crsid')
 
-    file_path = f'./data/{crsid}'
+    logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-    if not os.path.exists(file_path) or not os.path.exists(f'{file_path}/workout_data.crypt'):
-        return redirect(url_for('login'))
+    query = select(Workout).where(Workout.user_id == logid)
 
-    df = crp.read_encrypted(path=f'{file_path}/workout_data.crypt',password=decrypt_pass)
+    # Use pandas to read the query result into a DataFrame
+    df = pd.read_sql(query, engine)
 
     df['date'] = pd.to_datetime(df['date'])
     df['distance'] = pd.to_numeric(df['distance'], errors='coerce')
@@ -1151,14 +1005,14 @@ def data():
 
     df = df.sort_values("date")
 
-    max_select = ['id','date','distance','time','split','stroke_rate','workout_type','heart_rate.average','comments']
-    select = []
+    max_select = ['id','date','distance','time','split','spm','type','avghr','comments']
+    selects = []
 
     for item in max_select:
         if item in df.keys():
-            select.append(item)
+            selects.append(item)
 
-    subdf = df[select].copy()
+    subdf = df[selects].copy()
 
     headers = ['id','Date','Distance','Time','Split / 500m','Stroke Rate','Type','Average HR','Comments']
 
@@ -1170,9 +1024,10 @@ def data():
 
     subdf_dict = subdf.to_dict(orient='records')
 
-    return render_template('data.html', data=subdf_dict,
+    return render_template('data.html', data=subdf_dict, crsid=crsid, superuser=superuser,
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'), headers=headers, totaldist=totaldist, totaltime=totaltime)
 
+# Updated to SQL
 @app.route('/workout')
 def workout():
 
@@ -1199,19 +1054,7 @@ def workout():
     else:
         crsid = auth_decorator.principal
 
-    info_file = f'./data/{crsid}/user_info.txt'
-
-    if not os.path.exists(info_file):
-        return(redirect(url_for('login')))
-
-    # return (user_data)
-    with open(info_file, 'rb') as file:
-        encrypted_data = file.read()
-
-    # Decrypt the data
-    user_data = json.loads(datacipher.decrypt(encrypted_data).decode())
-
-    logid = user_data['id']
+    logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
     data_url = f"https://log.concept2.com/api/users/{logid}/results/{workoutid}"
 
@@ -1360,7 +1203,7 @@ def workout():
         div1 = 'No stroke data found!'
 
     max_select = ['id','date','distance','time','split','stroke_rate','workout_type','heart_rate.average','comments']
-    select = []
+    selects = []
 
     headers_mapping = {
         'id': 'ID',
@@ -1382,14 +1225,14 @@ def workout():
         else:
             value = res.get(item, None)
 
-        # Append to `select` if the item exists in `res` and is not empty or invalid
+        # Append to `selects` if the item exists in `res` and is not empty or invalid
         if value not in ['', np.nan, None, [], {}]:
-            select.append(item)
+            selects.append(item)
 
-    resdict = {k: res[k] if '.' not in k else res[k.split('.')[0]][k.split('.')[1]] for k in select}
+    resdict = {k: res[k] if '.' not in k else res[k.split('.')[0]][k.split('.')[1]] for k in selects}
 
-    # Filter headers based on `select`
-    filtered_headers = [headers_mapping[item] for item in select]
+    # Filter headers based on `selects`
+    filtered_headers = [headers_mapping[item] for item in selects]
 
     return(render_template(
         template_name_or_list='workout.html',
@@ -1399,13 +1242,14 @@ def workout():
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'),
         headers=filtered_headers, data=resdict))
 
+# Updated for SQL
 @app.route('/club')
 def club():
 
     users_file = './data/users.crypt'
     users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
 
-    crsids = users_data['crsid'].values
+    crsids = session.execute(select(User.crsid)).scalars().all()
     args = request.args
 
     dfs = []
@@ -1422,12 +1266,11 @@ def club():
         to_date = datetime.strptime('2025-06-30', '%Y-%m-%d')
 
     for crsid in crsids:
-        user_path = f'./data/{crsid}'
+        logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-        if not os.path.exists(f'{user_path}/workout_data.crypt'):
-            continue
+        query = select(Workout).where(Workout.user_id == logid)
 
-        userdf = crp.read_encrypted(password = decrypt_pass, path=f'{user_path}/workout_data.crypt')
+        userdf = pd.read_sql(query, engine)
 
         userdf['date'] = pd.to_datetime(userdf['date'])
         userdf['distance'] = pd.to_numeric(userdf['distance'], errors='coerce')
@@ -1464,8 +1307,8 @@ def club():
 
         date=clubdf[f'{crsid}_date']
         distance=clubdf[f'{crsid}_distance'].cumsum()
-        idcolor = users_data[users_data['crsid'] == crsid]['color'].values[0]
-        idname = users_data[users_data['crsid'] == crsid]['First Name'].values[0] + ' ' + users_data[users_data['crsid'] == crsid]['Last Name'].values[0]
+        idcolor = session.execute(select(User.color).where(User.crsid == crsid)).scalar()
+        idname = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
 
         source = ColumnDataSource(data=dict(
             x=date,
@@ -1537,16 +1380,19 @@ def user_list():
         </form>
     ''')
 
+# Update for SQL
 @app.route('/pbs')
 def pbs():
     crsid = auth_decorator.principal
 
     file_path = f'./data/{crsid}'
 
-    if not os.path.exists(file_path) or not os.path.exists(f'{file_path}/workout_data.crypt'):
-        return redirect(url_for('login'))
+    logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-    df = crp.read_encrypted(password = decrypt_pass, path=f'{file_path}/workout_data.crypt')
+    query = select(Workout).where(Workout.user_id == logid)
+
+    # Use pandas to read the query result into a DataFrame
+    df = pd.read_sql(query, engine)
 
     df['date'] = pd.to_datetime(df['date'])
     df['distance'] = pd.to_numeric(df['distance'], errors='coerce')
@@ -1887,67 +1733,6 @@ def captains():
     return(render_template(
             template_name_or_list='captains.html'))
 
-
-
-@app.route('/user_settings', methods=['GET','POST'])
-def user_settings():
-    crsid = auth_decorator.principal
-
-    superuser = superuser_check(crsid, superusers)
-
-    users = './data/users.crypt'
-
-    if not os.path.exists(users):
-        return redirect(url_for('setup'))
-
-    users_data = crp.read_encrypted(password = decrypt_pass, path=users)
-
-    if str(crsid) not in users_data['crsid'].values:
-        return redirect(url_for('setup'))
-
-    personal_data = users_data.loc[users_data['crsid'] == crsid].to_dict('records')[0]
-
-    keys = ['crsid', 'First Name', 'Last Name', 'logbook id', 'color', 'Preferred Name', 'Squad', 'Bowside', 'Strokeside', 'Coxing', 'Sculling', 'Years Rowing', 'Year', 'Subject']
-    for key in keys:
-        if key not in personal_data:
-            personal_data[key] = ''
-            users_data[key] = pd.NA
-
-    if request.method == 'POST':
-        new_data = {
-            'crsid': crsid,
-            'First Name': personal_data['First Name'],
-            'Last Name': personal_data['Last Name'],
-            'logbook id': personal_data['logbook id'],
-            'color': personal_data['color'],
-            'Preferred Name': request.form.get('preferred_name', personal_data['Preferred Name']),
-            'Squad': request.form.get('squad', personal_data['Squad']),
-            'Bowside': request.form.get('bowside', personal_data['Bowside']),
-            'Strokeside': request.form.get('strokeside', personal_data['Strokeside']),
-            'Coxing': request.form.get('coxing', personal_data['Coxing']),
-            'Sculling': request.form.get('sculling', personal_data['Sculling']),
-            'Years Rowing': request.form.get('years_rowing', personal_data['Years Rowing']),
-            'Year': request.form.get('year', personal_data['Year']),
-            'Subject': request.form.get('subject', personal_data['Subject']),
-            'Logbook': personal_data['Logbook']
-        }
-
-        print(new_data)
-
-        new_row = pd.DataFrame([new_data], index=users_data[users_data['crsid'] == crsid].index)
-
-        # Update the existing row using DataFrame.update()
-        users_data.update(new_row)
-
-        personal_data = users_data.loc[users_data['crsid'] == crsid].to_dict('records')[0]
-
-        crp.to_encrypted(users_data, password=decrypt_pass, path=users)
-
-    return(render_template(
-        template_name_or_list='user.html',
-        club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'),
-        authorize = url_for('authorize'), captains = url_for('captains'), superuser=superuser,
-        personal_data = personal_data))
 
 days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 hours_of_day = range(6, 18)  # 6:00 to 17:00 (9 AM to 5 PM)

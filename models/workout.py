@@ -1,7 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from models.base import Base  # Import the shared Base
 
 # Define the table structure with only the required columns
 class Workout(Base):
@@ -12,6 +10,7 @@ class Workout(Base):
     date = Column(DateTime)
     distance = Column(Integer)
     type = Column(String(255))
+    workout_type = Column(String(255))
     time = Column(Integer)
     spm = Column(Integer)
     avghr = Column(Integer)
