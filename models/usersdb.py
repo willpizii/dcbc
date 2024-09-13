@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, Text
 from models.base import Base  # Import the shared Base
 
 # Define the table structure with only the required columns
@@ -23,3 +23,5 @@ class User(Base):
     subject= Column(String(255))
 
     logbook = Column(Boolean)
+
+    boats = Column(Text)

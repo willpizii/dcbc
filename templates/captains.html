@@ -1,20 +1,218 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    .yes {
+        background-color: #98FB98 !important; /* Green for Yes */
+        color: white;
+    }
+    .limited {
+        background-color: #FFFFE0 !important; /* Yellow for Limited */
+        color: black;
+    }
+    .no {
+        background-color: #FF6F6F !important; /* Red for No */
+        color: white;
+    }
+    .equal-width{
+        width: 100px;
+    }
+    .disabled-td{
+        cursor: not-allowed;
+        background-color: #EEE !important;
+        color: #9E9999 !important;
+    }
+</style>
 
-<form method="get" action="{{ url_for('plot') }}">
-    <div class="container-fluid py-4">
-        <h3> Welcome to the Captain's Space </h3>
-        <table>
-            <tr>
-                <td><label for="crsid">CRSID:</label></td>
-                <td><input type="text" id="crsid" name="crsid" required></td>
-            </tr>
-            <tr>
-                <td colspan="2"><input type="submit" value="View"></td>
-            </tr>
-        </table>
+<div class="container py-4">
+    <h3 class="mb-4">Welcome to the Captain's Space</h3>
+
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <select id="squadFilter" class="form-select" onchange="filter()">
+                <option value="all">All Squads</option>
+                <option value="womens">Womens</option>
+                <option value="mens">Mens</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select id="boatFilter" class="form-select" onchange="filter()">
+                <option value="all">All Boats</option>
+                {% for boat in unique_boats %}
+                    <option value="{{ boat }}">{{ boat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <input type="text" id="nameSearch" class="form-control" placeholder="Search by Name or Boat" oninput="filter()">
+        </div>
     </div>
-</form>
+
+    <div class="table-responsive">
+
+    <form method="POST" id="captainForm" action="/captains">
+
+    <table class="table table-bordered table-hover table-striped">
+        <thead class="table-dark">
+            <tr>
+                <th scope="col">CRSID</th>
+                <th scope="col">Name</th>
+                <th scope="col">Squad</th>
+                <th scope="col" class="equal-width">Bowside</th>
+                <th scope="col" class="equal-width">Strokeside</th>
+                <th scope="col" class="equal-width">Cox</th>
+                <th scope="col">Boat</th>
+                <th scope="col">Action</th>
+            </tr>
+        </thead>
+        <tbody id="userTableBody">
+            {% for user in users %}
+            <tr class="squad-{{ user.squad|lower }} boat-{{ user.boats|format_boats }}">
+                <td>{{ user.crsid }}</td>
+                <td>{{ user.preferred_name+' '+user.last_name }}</td>
+                <td>{{ user.squad }}</td>
+
+                <td class="{{ 'yes' if user.bowside == 'Yes' else 'limited' if user.bowside == 'Limited' else 'no' }} equal-width">
+                    {{ user.bowside }}
+                </td>
+
+                <td class="{{ 'yes' if user.strokeside == 'Yes' else 'limited' if user.strokeside == 'Limited' else 'no' }} equal-width">
+                    {{ user.strokeside }}
+                </td>
+
+                <td class="{{ 'yes' if user.cox == 'Yes' else 'limited' if user.cox == 'Limited' else 'no' }} equal-width">
+                    {{ user.cox }}
+                </td>
+
+                <td>
+                    <div id="boats-{{ user.crsid }}">
+                        {% if user.boats %}
+                            {% for boat in user.boats.split(',') %}
+                                <div class="d-flex align-items-center mb-1">
+                                    <input type="text" name="boat_{{ user.crsid }}[]" class="form-control me-2 disabled-td" value="{{ boat }}" placeholder="Enter new boat" readonly data-boat="{{ boat }}" />
+                                    <button type="button" class="btn btn-danger btn-sm delete-boat" data-crsid="{{ user.crsid }}" data-boat="{{ boat }}">X</button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                        <div id="new-boats-{{ user.crsid }}">
+                            <!-- New crew fields will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-success btn-sm mt-2" id="add-boat-{{ user.crsid }}" data-crsid="{{ user.crsid }}">Add Crew</button>
+                        <p hidden> {{ user.boats }} </p> <!-- Hacky, but works -->
+                    </div>
+                </td>
+
+                <td>
+                    <a href="{{ url_for('plot', crsid=user.crsid) }}" class="btn btn-primary btn-sm">View Profile</a>
+
+                    <a href="{{ url_for('delete_user', crsid=user.crsid) }}" class="btn btn-danger btn-sm">Delete User</a>
+                </td>
+
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <button type="submit" class="btn btn-success mt-3">Commit Crews</button>
+
+    </form>
+
+    </div>
+</div>
+
+<!-- Optionally include Bootstrap JS for interactivity -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        function filter() {
+            var squadFilter = document.getElementById('squadFilter').value;
+            var boatFilter = document.getElementById('boatFilter').value;
+            var searchQuery = document.getElementById('nameSearch').value.toLowerCase();
+            var rows = document.querySelectorAll('#userTableBody tr');
+
+            rows.forEach(function(row) {
+                // Check squad filter
+                var squadMatch = (squadFilter === 'all' || row.classList.contains('squad-' + squadFilter));
+                var isBoth = row.classList.contains('squad-both');
+
+                // Check boat filter
+                var boatMatch = boatFilter === 'all'; // Start with true if 'all' is selected
+                if (boatFilter !== 'all') {
+                    var boats = row.querySelectorAll('[data-boat]');
+                    boatMatch = Array.from(boats).some(function(boatField) {
+                        return boatField.getAttribute('data-boat').toLowerCase() === boatFilter.toLowerCase();
+                    });
+                }
+
+                // Check search query
+                var nameCells = row.querySelectorAll('td:nth-child(2)'); // Name columns
+                var nameMatch = Array.from(nameCells).some(function(cell) {
+                    return cell.textContent.toLowerCase().includes(searchQuery);
+                });
+
+                var boatCells = row.querySelectorAll('[data-boat]');
+                var boatNameMatch = Array.from(boatCells).some(function(cell) {
+                    return cell.getAttribute('data-boat').toLowerCase().includes(searchQuery);
+                });
+
+                if ((squadMatch || isBoth) && boatMatch && (nameMatch || boatNameMatch)) {
+                    row.style.display = ''; // Show row if it matches all filters
+                } else {
+                    row.style.display = 'none'; // Hide row
+                }
+            });
+        }
+
+        document.getElementById('squadFilter').addEventListener('change', filter);
+        document.getElementById('boatFilter').addEventListener('change', filter);
+        document.getElementById('nameSearch').addEventListener('input', filter);
+
+        filter();
+
+        document.querySelectorAll('.delete-boat').forEach(button => {
+            button.addEventListener('click', function() {
+                const crsid = this.getAttribute('data-crsid');
+                const boat = this.getAttribute('data-boat');
+
+                // Find the input field and delete button
+                const boatDiv = this.parentElement;
+                boatDiv.remove();
+
+                // Optional: Use JavaScript to track changes on the client side
+                // You might need to update the hidden form or handle the update in the backend
+
+                // If you need to handle the changes in a hidden form or another way, you can do it here
+            });
+        });
+
+        // Function to add new crew fields
+        function addNewCrewFields(crsid) {
+            const container = document.getElementById(`new-boats-${crsid}`);
+            const newField = document.createElement('div');
+            newField.className = 'd-flex align-items-center mb-1';
+            newField.innerHTML = `
+                <input type="text" name="boat_${crsid}[]" class="form-control me-2" placeholder="Enter new boat" />
+                <button type="button" class="btn btn-danger btn-sm remove-field">Remove</button>
+            `;
+            container.appendChild(newField);
+        }
+
+        // Attach click event to 'Add Crew' buttons
+        document.querySelectorAll('[id^=add-boat-]').forEach(button => {
+            button.addEventListener('click', function() {
+                const crsid = this.getAttribute('data-crsid');
+                addNewCrewFields(crsid);
+            });
+        });
+
+        // Attach click event to 'Remove' buttons inside the new crew fields
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove-field')) {
+                e.target.parentElement.remove();
+            }
+        });
+    });
+</script>
 
 {% endblock %}

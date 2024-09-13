@@ -6,6 +6,7 @@ import random
 import hashlib
 import getpass
 import io
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -15,14 +16,16 @@ import qrcode
 from io import BytesIO
 from datetime import datetime, time, timedelta
 import pyarrow as pa
+import calendar
 
 import requests
 from urllib.parse import urlencode
 
 import flask
-from flask import (Flask, redirect, Blueprint, request, session,
+from flask import (Flask, redirect, Blueprint, request,
                    render_template_string, send_file, url_for,
                    make_response, render_template, send_from_directory)
+from flask import session as cookie_session
 
 from bokeh.io import output_file, show
 from bokeh.plotting import figure
@@ -38,12 +41,13 @@ from cryptography.fernet import Fernet
 import cryptpandas as crp
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 from models.workout import Workout # Import from models.py
 from models.usersdb import User
+from models.boatsdb import Boat
 from models.base import Base
 
 class R(flask.Request):
@@ -53,6 +57,7 @@ app = Flask(__name__)
 app.request_class = R
 
 app.config['SERVER_NAME'] = 'wp280.user.srcf.net'
+app.config['SESSION_COOKIE_NAME'] = 'cookie_session'
 
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -611,8 +616,6 @@ def load_all():
         # Decrypt the data
         token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
 
-    print(token_data)
-
     access_token = token_data['access_token']
     refresh_token = token_data['refresh_token']
 
@@ -740,7 +743,7 @@ def webhook():
     if request.is_json:
         webhook_data = request.get_json()
 
-        # Print the type of event and the result payload
+        # Get the type of event and the result payload
         event_type = webhook_data.get('type')
 
         if event_type != 'result-deleted':
@@ -951,8 +954,6 @@ def plot():
 
     script1, div1 = components(p1)
 
-    print (otherview)
-
     return(render_template(
         template_name_or_list='plot.html',
         script=[script1],
@@ -989,12 +990,11 @@ def data():
         from_date = args.get('from_date')
         to_date = args.get('to_date')
 
-        # Filter the DataFrame
-        df = df[(df['date'] >= from_date) & (df['date'] <= to_date)]
-
     else:
-        from_date = df['date'].min()
-        to_date = df['date'].max()
+        from_date = '2024-01-01'
+        to_date = '2024-12-31'
+
+    df = df[(df['date'] >= from_date) & (df['date'] <= to_date)]
 
     df['split'] = df['split'].apply(format_seconds)
 
@@ -1005,7 +1005,7 @@ def data():
 
     df = df.sort_values("date")
 
-    max_select = ['id','date','distance','time','split','spm','type','avghr','comments']
+    max_select = ['id','date','distance','time','split','spm','type','workout_type','avghr','comments']
     selects = []
 
     for item in max_select:
@@ -1014,7 +1014,7 @@ def data():
 
     subdf = df[selects].copy()
 
-    headers = ['id','Date','Distance','Time','Split / 500m','Stroke Rate','Type','Average HR','Comments']
+    headers = ['id','Date','Distance','Time','Split / 500m','Stroke Rate','Type','Workout Type','Average HR','Comments']
 
     # Apply the function to each cell in the DataFrame
     if 'stroke_rate' in subdf:
@@ -1117,7 +1117,6 @@ def workout():
     res = dataresponse['data']
 
     if res['stroke_data']:
-        print("found stroke data")
         stroke_url = f"https://log.concept2.com/api/users/{logid}/results/{workoutid}/strokes"
 
         data_headers = {
@@ -1245,10 +1244,6 @@ def workout():
 # Updated for SQL
 @app.route('/club')
 def club():
-
-    users_file = './data/users.crypt'
-    users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
-
     crsids = session.execute(select(User.crsid)).scalars().all()
     args = request.args
 
@@ -1364,21 +1359,6 @@ def forbidden():
         <p><a href="{{ url_for('index')}}"> Go home </a></p>
 
     ''', crsid=crsid, ref=ref)
-
-@app.route('/user_list')
-def user_list():
-    crsid = auth_decorator.principal
-    if crsid not in superusers:
-        return (redirect(url_for('forbidden', ref='user_list')))
-
-    return render_template_string('''
-        <h1>Select User</h1>
-        <form method="get" action="{{ url_for('plot') }}">
-            <label for="crsid">CRSid:</label>
-            <input type="text" id="crsid" name="crsid" required>
-            <input type="submit" value="View">
-        </form>
-    ''')
 
 # Update for SQL
 @app.route('/pbs')
@@ -1594,7 +1574,7 @@ def coach():
 
     if code != False:
         if verify_2fa(username, code, coaches):
-            session['authenticated'] = True
+            cookie_session['authenticated'] = True
 
             user = get_coach(username, coaches)
             if not user['app_added']:
@@ -1604,7 +1584,11 @@ def coach():
 
             return(redirect(url_for('coachview', username=username)))
         else:
-            return("2FA Failed!")
+            return(render_template_string('''
+                2FA Failed!
+
+                <a href={{ url_for('coach') }}> Go back </a>
+            '''))
 
     qr_code_base64 = generate_qr_code(username, coaches)
     qr_code_url = f'data:image/png;base64,{qr_code_base64}' if qr_code_base64 else None
@@ -1628,16 +1612,13 @@ def coach():
 
 @app.route('/coach/view')
 def coachview():
-    if not session.get('authenticated'):
+    if not cookie_session.get('authenticated'):
         return(render_template_string('''
             <h1>Session is not authenticated!</h1>
             <p><a href="{{ url_for('coach')}}"> Try logging in again! </a></p>
         '''))
     else:
-        users_file = './data/users.crypt'
-        users_data = crp.read_encrypted(password = decrypt_pass, path=users_file)
-
-        crsids = users_data['crsid'].values
+        crsids = session.execute(select(User.crsid)).scalars().all()
         args = request.args
 
         dfs = []
@@ -1654,12 +1635,11 @@ def coachview():
             to_date = datetime.strptime('2025-06-30', '%Y-%m-%d')
 
         for crsid in crsids:
-            user_path = f'./data/{crsid}'
+            logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-            if not os.path.exists(f'{user_path}/workout_data.crypt'):
-                continue
+            query = select(Workout).where(Workout.user_id == logid)
 
-            userdf = crp.read_encrypted(password = decrypt_pass, path=f'{user_path}/workout_data.crypt')
+            userdf = pd.read_sql(query, engine)
 
             userdf['date'] = pd.to_datetime(userdf['date'])
             userdf['distance'] = pd.to_numeric(userdf['distance'], errors='coerce')
@@ -1678,7 +1658,15 @@ def coachview():
 
         totaltime = format_seconds(totaltime/10)
 
-        clubdf = pd.concat(dfs, axis=0, ignore_index=True)
+        try:
+            clubdf = pd.concat(dfs, axis=0, ignore_index=True)
+        except:
+            return(render_template(
+            template_name_or_list='club.html',
+            script='',
+            div=['<p>No user data found! Make sure some data exists. </p>'], totaldist = 0, totaltime = 0,
+            clubdf = [], superuser = superuser_check(auth_decorator.principal, superusers),
+            club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
         p1 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime')
 
@@ -1688,8 +1676,8 @@ def coachview():
 
             date=clubdf[f'{crsid}_date']
             distance=clubdf[f'{crsid}_distance'].cumsum()
-            idcolor = users_data[users_data['crsid'] == crsid]['color'].values[0]
-            idname = users_data[users_data['crsid'] == crsid]['First Name'].values[0] + ' ' + users_data[users_data['crsid'] == crsid]['Last Name'].values[0]
+            idcolor = session.execute(select(User.color).where(User.crsid == crsid)).scalar()
+            idname = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
 
             source = ColumnDataSource(data=dict(
                 x=date,
@@ -1717,27 +1705,76 @@ def coachview():
         script1, div1 = components(p1)
 
         return(render_template(
-            template_name_or_list='club.html',
+            template_name_or_list='coach.html',
             script=[script1],
             div=[div1], totaldist = totaldist, totaltime = totaltime,
-            clubdf = clubdf,
+            clubdf = clubdf, superuser = superuser_check(auth_decorator.principal, superusers),
             club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
-@app.route('/captains')
+@app.route('/captains', methods=['GET', 'POST'])
 def captains():
     crsid = auth_decorator.principal
+    users = session.execute(select(User)).scalars().all()
+
+    def format_boats(boats):
+        if boats:
+            return boats.replace(',', ' ').replace(' ', '-').lower()
+        return ''
+
+    app.jinja_env.filters['format_boats'] = format_boats
 
     if crsid not in superusers:
         return redirect(url_for('forbidden', ref='captains'))
 
-    return(render_template(
+    if request.method == 'POST':
+        # Retrieve all user CRSID values
+        user_crsids = [user.crsid for user in session.execute(select(User)).scalars().all()]
+
+        # Process boat updates
+        for crsid in user_crsids:
+            boats = request.form.getlist(f'boat_{crsid}[]')
+            boats = [boat for boat in boats if boat.strip()]
+            # Update the User table with the new boat values
+            session.execute(
+                update(User)
+                .where(User.crsid == crsid)
+                .values(boats=','.join(boats))
+            )
+        session.commit()
+        return redirect(url_for('captains'))
+
+    unique_boats = set()
+    for user in users:
+        if user.boats:
+            boats = user.boats.split(',')
+            for boat in boats:
+                unique_boats.add(boat.strip())
+
+    return(render_template(users=users,unique_boats=sorted(unique_boats),
             template_name_or_list='captains.html'))
 
+
+@app.route('/commit_crews', methods=['POST'])
+def commit_crews():
+    for crsid, boat_list in request.form.items():
+        if crsid.startswith('boat_'):
+            crsid = crsid.split('_', 1)[1]
+            boats = boat_list.split(',')  # Assuming boats are comma-separated
+
+            # Fetch user by CRSId
+            user = session.query(User).filter(User.crsid == crsid).first()
+            if user:
+                existing_boats = set(user.boats.split(',')) if user.boats else set()
+                updated_boats = existing_boats.union(set(boats))
+                user.boats = ','.join(updated_boats)
+                session.commit()
+
+    return redirect(url_for('captains'))
 
 days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 hours_of_day = range(6, 18)  # 6:00 to 17:00 (9 AM to 5 PM)
 
-
+# Needs updating at very least
 @app.route('/availability', methods=['GET', 'POST'])
 def set_availabilities():
     crsid = auth_decorator.principal
@@ -1766,18 +1803,38 @@ def set_availabilities():
     selected_week = 1
 
     context = {
-        'weeks': weeks,
         'selected_week': selected_week,
         'existingData': existingData,
         'crsid': crsid,
+        'months': ['October 2024'],
         'username': username,
-        'days_of_week': days_of_week,
         'hours_of_day': hours_of_day,
         'existing': existing,
         'superuser': superuser
     }
 
-    return render_template('availability.html', **context)
+    now = datetime.now()
+    year = now.year
+    month = now.month
+
+    # Get days in the month
+    _, num_days = calendar.monthrange(year, month)
+    days_of_week = calendar.weekheader(2).split()
+    weeks = []
+    day_cells = [[] for _ in range(6)]  # 6 weeks max
+
+    day_count = 1
+    for week in calendar.monthcalendar(year, month):
+        for i, day in enumerate(week):
+            if day != 0:
+                day_cells[week[0] // 7].append(day)
+            else:
+                day_cells[week[0] // 7].append('')
+
+    return render_template('calendar.html', **context, days_of_week=days_of_week,
+                           day_cells=day_cells,
+                           year=year,
+                           month=month)
 
 @app.route('/submit_availability', methods=['POST'])
 def submit_availability():
@@ -1861,6 +1918,57 @@ def planner():
 
     return render_template('planner.html', availabilities=datadict,
                            days_of_week=days_of_week, hours_of_day=hours_of_day, superuser=superuser)
+
+
+@app.route('/delete_user', methods=['GET', 'POST'])
+def delete_user():
+    # Not implemented yet!
+
+    crsid = auth_decorator.principal
+
+    if 'crsid' in request.args:
+        delid = request.args.get('crsid')
+        if not crsid == delid or not superuser_check(crsid, superusers):
+            return url_for(forbidden)
+    else:
+        delid = crsid
+
+    if request.method == 'POST':
+        deleteid = request.form.get("deleteid")
+
+        if deleteid != delid:
+            return(redirect(url_for("index")))
+
+        try:
+            shutil.rmtree(f'./data/{delid}')
+        except:
+            pass
+
+        logid = session.execute(select(User.logbookid).where(User.crsid == delid)).scalar()
+
+        if logid is not None:
+            session.execute(delete(Workout).where(Workout.user_id == logid))
+        session.execute(delete(User).where(User.crsid == delid))
+        session.commit()
+
+        return render_template_string('''
+            All information for user {{delid}} deleted.
+
+            <button type="submit" action="{{url_for("index")}}">Return Home</button>
+        ''', delid=delid)
+
+    return render_template_string('''
+            <b> Are you sure you want to delete the user {{ delid }}? </b>
+
+            Type the crsid in this box and submit to confirm user deletion.
+
+            <b> All user information will be deleted! </b>
+
+            <form method="POST" id="deleteConfirm" action="/delete_user?crsid={{ delid }}">
+                <input type="text" name="deleteid" placeholder="CRSid"/>
+                <button type="submit">Confirm</button>
+            </form>
+    ''', delid=delid)
 
 def superuser_check(crsid, superusers):
     if crsid in superusers:

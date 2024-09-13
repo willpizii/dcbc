@@ -8,3 +8,4 @@ cryptpandas
 cryptography
 pyotp
 qrcode
+sqlalchemy
