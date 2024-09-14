@@ -2,4 +2,4 @@
 
 Relies on Raven authentication
 
-Todo: revamp to run on a sql backend, instead of an array of encrypted csvs
+Runs on a SQL Backend. Currently hosted on SRCF in Cambridge
