@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Text
+from sqlalchemy import Column, Integer, String, Date, Text, JSON
 from models.base import Base  # Import the shared Base
 
 class Daily(Base):
@@ -6,10 +6,7 @@ class Daily(Base):
 
     date = Column(Date, primary_key=True)
 
-    out_of_cam = Column(Text)
-    not_available = Column(Text)
-    if_required = Column(Text)
-    available = Column(Text)
+    user_data = Column(JSON)
 
     outings = Column(Text)
     races = Column(String(255))

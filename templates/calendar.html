@@ -13,6 +13,7 @@
         text-align: center;
         cursor: pointer;
         user-select: none;
+        position: relative;
     }
     th {
         background-color: #f2f2f2;
@@ -23,8 +24,22 @@
     .not-available {
         background-color: #FF6F6F; /* Light red for not available */
     }
-    .if-needs-be {
+    .if-required {
         background-color: #FFFFE0; /* Light yellow for if needs be */
+    }
+    .out-of-cam {
+        background-color: #772727; /* Dark red for out of cambridge */
+        color: white;
+    }
+    .race-day{
+        box-shadow: inset 0px 0px 0px 4px #bb0088;
+    }
+    .event-day{
+        box-shadow: inset 0px 0px 0px 4px #0088bb;
+    }
+    .race-event-day{
+        box-shadow: inset 0px 0px 0px 2px #0088bb,
+                    inset 0px 0px 0px 4px #bb0088;
     }
     .button-group {
         margin-bottom: 10px;
@@ -40,9 +55,18 @@
         background-color: #FF6F6F; /* Match the 'not-available' cell color */
         color: black;
     }
-    #markIfNeedsBe {
+    #markIfRequired {
         background-color: #FFFFE0; /* Match the 'if-needs-be' cell color */
         color: black;
+    }
+    #markOutOfCam {
+        background-color: #772727; /* Match the 'if-needs-be' cell color */
+        color: white;
+    }
+
+    .fill-grey{
+        background-color: #CCCCCC;
+        cursor: not-allowed;
     }
     button {
         border: none;
@@ -71,42 +95,51 @@
             <input type="text" id="name" name="name" hidden value="{{ crsid }}">
             <input type="text" style="cursor: not-allowed;" disabled value="{{ username }}"><br><br>
 
-            <select id="weekSelector" name="month" class="form-select mb-3">
-                {% for month in months %}
-                    <option value="{{ month }}" {% if month == selected_week %}selected{% endif %}>{{ month }}</option>
+            <select id="monthSelector" name="month" class="form-select mb-3" value={{ month }}>
+                {% for month_value, month_name in months %}
+                    <option value="{{ month_value }}" {% if month_value == month %}selected{% endif %}>
+                        {{ month_name }} 2024
+                    </option>
                 {% endfor %}
             </select>
 
             <label>Select Times:</label><br>
-            <table id="availabilityTable" border="1">
-                <thead>
-                    <tr>
-                        <th></th>
-                        {% for day in days_of_week %}
-                            <th>{{ day }}</th>
-                        {% endfor %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for week in day_cells %}
+            <div>
+                <table id="availabilityTable" border="1">
+                    <thead>
                         <tr>
-                            <th>Week {{ loop.index }}</th>
-                            {% for day in week %}
-                                <td>
-                                    {% if day %}
-                                        {{ day }}
-                                    {% endif %}
-                                </td>
+                            {% for day in days_of_week %}
+                                <th>{{ day }}</th>
                             {% endfor %}
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody id='calendarBody'>
+                    </tbody>
+                </table>
+            </div>
             <br>
-            <button type="submit">Save Week</button>
+            <button type="submit">Save Month</button>
         </form>
     </div>
 </div>
+
+<script>
+    // Function to ensure the correct month is selected after loading
+    window.onload = function() {
+        // Get the selected_month value from a hidden input field or set a default
+        var selectedMonth = "{{ month }}"; // The selected month passed from the backend
+        var monthSelector = document.getElementById('monthSelector');
+
+        if (monthSelector) {
+            for (var i = 0; i < monthSelector.options.length; i++) {
+                if (monthSelector.options[i].value == selectedMonth) {
+                    monthSelector.options[i].selected = true;
+                    break;
+                }
+            }
+        }
+    };
+</script>
 
 <script>
     // Define the days of the week for column headers
@@ -117,10 +150,17 @@
         return new Date(year, month, 0).getDate();
     }
 
+    // Function to get the day of the week the month starts on (0 = Sunday, 1 = Monday, etc.)
+    function getStartDayOfMonth(month, year) {
+        const startDay = new Date(year, month - 1, 1).getDay();
+        return (startDay === 0) ? 6 : startDay - 1;
+    }
+
     // Function to populate the calendar based on the selected month
     function populateCalendar() {
         const monthSelector = document.getElementById('monthSelector');
-        const selectedMonth = monthSelector.value;
+        const selectedMonth = parseInt(monthSelector.value);  // Get the selected month as an integer
+        const monthName = new Date(0, selectedMonth - 1).toLocaleString('default', { month: 'long' });
         const calendarBody = document.getElementById('calendarBody');
         const year = new Date().getFullYear(); // Use the current year
 
@@ -128,21 +168,29 @@
         calendarBody.innerHTML = '';
 
         // Determine the number of days in the selected month
-        const daysInMonth = getDaysInMonth(new Date(Date.parse(selectedMonth +" 1, 2024")).getMonth() + 1, year);
+        const daysInMonth = getDaysInMonth(selectedMonth, year);
 
-        // Calculate the number of weeks needed
-        const numberOfWeeks = Math.ceil(daysInMonth / 7);
+        // Get the start day of the month (0 = Sunday, 1 = Monday, etc.)
+        const startDay = getStartDayOfMonth(selectedMonth, year);
 
-        // Populate the table rows for each week
+        // Fill in the weeks and days
+        let dayCounter = 1; // Keeps track of the day of the month
+
+        // We might need to account for previous month's days to align the first day correctly
+        let numberOfWeeks = Math.ceil((daysInMonth + startDay) / 7);
+
         for (let week = 0; week < numberOfWeeks; week++) {
             let row = '<tr>';
-            row += `<td>Week ${week + 1}</td>`; // Week number
 
-            for (let day = week * 7; day < (week + 1) * 7; day++) {
-                if (day < daysInMonth) {
-                    row += `<td data-date="${day + 1}">${day + 1}</td>`; // Day of the month
+            for (let day = 0; day < 7; day++) {
+                if (week === 0 && day < startDay || dayCounter > daysInMonth) {
+                    // Empty cell for days outside the current month
+                    row += '<td class="fill-grey"></td>';
                 } else {
-                    row += '<td></td>'; // Empty cell for days outside the current month
+                    // Construct the full YYYYMMDD date string
+                    let fullDate = `${year}${String(selectedMonth).padStart(2, '0')}${String(dayCounter).padStart(2, '0')}`;
+                    row += `<td data-date="${fullDate}">${dayCounter}</td>`;
+                    dayCounter++;
                 }
             }
 
@@ -153,6 +201,10 @@
 
     // Initial population of the calendar
     populateCalendar();
+
+    // Add event listener for month selector change
+    document.getElementById('monthSelector').addEventListener('change', populateCalendar);
+
 </script>
 
 <script>
@@ -163,59 +215,82 @@
         const lockedCells = new Set(); // Set to track locked cells
 
         let markMode = 'available'; // Default mode
-        let currentWeek = document.getElementById('weekSelector').value;
+        let currentMonth = document.getElementById('monthSelector').value;
 
         const table = document.getElementById('availabilityTable');
         const form = document.getElementById('availabilityForm');
-        const weekSelector = document.getElementById('weekSelector');
+        const monthSelector = document.getElementById('monthSelector');
 
         const existingData = {{ existingData|tojson|default('{}')|safe }};
+        const raceDays = {{ race_days|tojson|default('{}')|safe }};
+        const eventDays = {{ event_days|tojson|default('{}')|safe }};
 
         // Function to update table based on week selection
         function initializeTable() {
-            const selectedWeek = weekSelector.value;
-            if (!existingData || !existingData.weeks || !existingData.weeks[selectedWeek]) {
-                console.warn(`No data found for week ${selectedWeek}`);
-                document.querySelectorAll('td[data-time]').forEach(cell => {
-                    const time = cell.dataset.time;
+            const selectedMonth = monthSelector.value;
+            if (!existingData) {
+                console.warn(`No data found`);
+                document.querySelectorAll('td[data-date]').forEach(cell => {
+                    const date = cell.dataset.date;
 
                     // Determine the cell's state based on existing data
                     let currentState = 'available'; // Default state
                     // Apply the determined state
-                    markedCells.set(time, currentState);
-                    cell.classList.remove('available', 'not-available', 'if-needs-be');
+                    markedCells.set(date, currentState);
+                    cell.classList.remove('available', 'not-available', 'if-required', 'out-of-cam');
                     cell.classList.add(currentState);
                 });
                 return;
             }
 
-            const weekData = existingData.weeks[selectedWeek];
+            const monthData = existingData;
 
-            document.querySelectorAll('td[data-time]').forEach(cell => {
-                const time = cell.dataset.time;
+            document.querySelectorAll('td[data-date]').forEach(cell => {
+                const date = cell.dataset.date;
 
                 // Determine the cell's state based on existing data
                 let currentState = 'available'; // Default state
 
-                if (weekData['available'] && weekData['available'].includes(time)) {
+                if (monthData['available'] && monthData['available'].includes(date)) {
                     currentState = 'available';
-                } else if (weekData['not-available'] && weekData['not-available'].includes(time)) {
+                } else if (monthData['not-available'] && monthData['not-available'].includes(date)) {
                     currentState = 'not-available';
-                } else if (weekData['if-needs-be'] && weekData['if-needs-be'].includes(time)) {
-                    currentState = 'if-needs-be';
+                } else if (monthData['if-required'] && monthData['if-required'].includes(date)) {
+                    currentState = 'if-required';
+                } else if (monthData['out-of-cam'] && monthData['out-of-cam'].includes(date)) {
+                    currentState = 'out-of-cam';
+                }
+
+                if (raceDays && raceDays[date] && eventDays && eventDays[date]){
+                    cell.classList.add('race-event-day')
+                    cell.title = raceDays[date]+'\n'+eventDays[date];
+
+                    cell.onclick = function() {
+                        window.location.href = '/races'; // Redirect to /races on click
+                    };
+                } else if (raceDays && raceDays[date]) {
+                    cell.classList.add('race-day');
+                    cell.title = raceDays[date];
+
+                    cell.onclick = function() {
+                        window.location.href = '/races'; // Redirect to /races on click
+                    };
+                } else if (eventDays && eventDays[date]) {
+                    cell.classList.add('event-day');
+                    cell.title = eventDays[date];
                 }
 
                 // Apply the determined state
-                markedCells.set(time, currentState);
-                cell.classList.remove('available', 'not-available', 'if-needs-be');
+                markedCells.set(date, currentState);
+                cell.classList.remove('available', 'not-available', 'if-required', 'out-of-cam');
                 cell.classList.add(currentState);
             });
         }
 
         initializeTable();
 
-        weekSelector.addEventListener('change', function() {
-            currentWeek = weekSelector.value;
+        monthSelector.addEventListener('change', function() {
+            currentMonth = monthSelector.value;
             initializeTable();
         });
 
@@ -232,8 +307,13 @@
             highlightButton(this);
         });
 
-        document.getElementById('markIfNeedsBe').addEventListener('click', function() {
-            markMode = 'if-needs-be';
+        document.getElementById('markIfRequired').addEventListener('click', function() {
+            markMode = 'if-required';
+            highlightButton(this);
+        });
+
+        document.getElementById('markOutOfCam').addEventListener('click', function() {
+            markMode = 'out-of-cam';
             highlightButton(this);
         });
 
@@ -243,7 +323,7 @@
         }
 
         table.addEventListener('mousedown', function (event) {
-            if (event.target.tagName === 'TD' && event.target.dataset.time) {
+            if (event.target.tagName === 'TD' && event.target.dataset.date) {
                 isMouseDown = true;
                 startCell = event.target;
                 toggleCell(event.target);
@@ -251,9 +331,9 @@
         });
 
         table.addEventListener('mouseover', function (event) {
-            if (isMouseDown && event.target.tagName === 'TD' && event.target.dataset.time) {
+            if (isMouseDown && event.target.tagName === 'TD' && event.target.dataset.date) {
                 if (startCell) {
-                    if (!lockedCells.has(event.target.dataset.time)) {
+                    if (!lockedCells.has(event.target.dataset.date)) {
                         selectRectangle(startCell, event.target);
                     }
                 }
@@ -270,15 +350,15 @@
             event.preventDefault(); // Prevent the default form submission
             const times = [];
 
-            markedCells.forEach((state, time) => {
+            markedCells.forEach((state, date) => {
                 if (state) {
-                    times.push(`${time}|${state}`);
+                    times.push(`${date}|${state}`);
                 }
             });
 
             const data = {
                 name: form.name.value,
-                week: currentWeek,
+                month: currentMonth,
                 times: times
             };
 
@@ -307,12 +387,12 @@
         });
 
         function toggleCell(cell) {
-            const time = cell.dataset.time;
-            const currentState = markedCells.get(time);
+            const date = cell.dataset.date;
+            const currentState = markedCells.get(date);
 
             if (currentState !== markMode) {
-                markedCells.set(time, markMode);
-                cell.classList.remove('available', 'not-available', 'if-needs-be');
+                markedCells.set(date, markMode);
+                cell.classList.remove('available', 'not-available', 'if-required', 'out-of-cam');
                 cell.classList.add(markMode);
             }
         }
@@ -333,7 +413,7 @@
             for (let i = minRow; i <= maxRow; i++) {
                 for (let j = minCol; j <= maxCol; j++) {
                     const cell = table.rows[i].cells[j];
-                    if (cell.dataset.time && !lockedCells.has(cell.dataset.time)) {
+                    if (cell.dataset.date && !lockedCells.has(cell.dataset.date)) {
                         toggleCell(cell);
                     }
                 }

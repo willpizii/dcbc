@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+    table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    th, td {
+        border: 1px solid black;
+        padding: 8px;
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+    }
+    th {
+        background-color: #f2f2f2;
+    }
+    .available {
+        background-color: #98FB98; /* Light green for available */
+    }
+    .not-available {
+        background-color: #FF6F6F; /* Light red for not available */
+    }
+    .if-required {
+        background-color: #FFFFE0; /* Light yellow for if needs be */
+    }
+    .out-of-cam {
+        background-color: #772727; /* Dark red for out of cambridge */
+        color: white;
+    }
+    .race-day{
+        box-shadow: inset 0px 0px 0px 4px #bb0088;
+    }
+    .event-day{
+        box-shadow: inset 0px 0px 0px 4px #0088bb;
+    }
+    .race-event-day{
+        box-shadow: inset 0px 0px 0px 2px #0088bb,
+                    inset 0px 0px 0px 4px #bb0088;
+    }
+    .button-group {
+        margin-bottom: 10px;
+    }
+    .active-button {
+        border: 3px solid black; /* Strong black border */
+    }
+    #markAvailable {
+        background-color: #98FB98; /* Match the 'available' cell color */
+        color: black;
+    }
+    #markNotAvailable {
+        background-color: #FF6F6F; /* Match the 'not-available' cell color */
+        color: black;
+    }
+    #markIfRequired {
+        background-color: #FFFFE0; /* Match the 'if-needs-be' cell color */
+        color: black;
+    }
+    #markOutOfCam {
+        background-color: #772727; /* Match the 'if-needs-be' cell color */
+        color: white;
+    }
+
+    .fill-grey{
+        background-color: #CCCCCC;
+        cursor: not-allowed;
+    }
+    button {
+        border: none;
+        padding: 10px;
+        font-size: 16px;
+        cursor: pointer;
+        margin-right: 10px;
+    }
+    /* Ensures proper alignment and spacing */
+    td, th {
+        min-width: 100px;
+    }
+</style>
+
+<div class="container mt-5">
+    <div class="p-4 border rounded bg-light">
+        <div class="p-3 border rounded bg-light">
+            <h3 class="mb-4 "> Upcoming Races and Events </h3>
+
+            <table id="availabilityTable" border="1" class='table table-hover'>
+                <thead>
+                    <tr>
+                        <th> Date </th>
+                        <th> Event </th>
+                        <th> Type </th>
+                        <th> Who? </th>
+                    </tr>
+                </thead>
+                <tbody id='eventsBody'>
+                </tbody>
+            </table>
+        </div>
+
+        <h3 class="mb-4 mt-4"> Add New Race or Event </h3>
+        <form method="POST" id="addEvent" action="/captains/races">
+            <table class='table table-borderless'>
+                <tr>
+                    <td>
+                        <input type="date" id="date" name="date" class="form-control" required>
+                    </td>
+                    <td>
+                        <input type="text" id="name" name="name" required>
+                    </td>
+                    <td>
+                        <select id="type" name="type">
+                            <option>Race</option>
+                            <option>Event</option>
+                        </select>
+                    </td>
+                    <td>
+                        Crews
+                    </td>
+                </tr>
+            </table>
+        </form>
+    </div>
+</div>
+
+<script>
+
+</script>
+
+{% endblock %}

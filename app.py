@@ -38,7 +38,6 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import Fernet
 
-import cryptpandas as crp
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update
@@ -48,6 +47,8 @@ from sqlalchemy.orm import sessionmaker
 from models.workout import Workout # Import from models.py
 from models.usersdb import User
 from models.boatsdb import Boat
+from models.dailydb import Daily
+from models.eventdb import Event
 from models.base import Base
 
 class R(flask.Request):
@@ -1771,7 +1772,6 @@ def commit_crews():
 
     return redirect(url_for('captains'))
 
-days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 hours_of_day = range(6, 18)  # 6:00 to 17:00 (9 AM to 5 PM)
 
 # Needs updating at very least
@@ -1781,120 +1781,127 @@ def set_availabilities():
 
     superuser = superuser_check(crsid, superusers)
 
-    if os.path.exists(f'./data/{crsid}/availability.json'):
-        existing = True
-        with open(f'./data/{crsid}/availability.json', 'r') as file:
-            existingData = json.load(file)
-    else:
-        existing = False
-        existingData = {}
+    username = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
 
-    users = './data/users.crypt'
-    users_data = crp.read_encrypted(password = decrypt_pass, path=users)
+    # Export data from SQL into a format comprehensible by html-side JS interpreter
+    def load_user_data(crsid):
+        # Fetch all rows for the given crsid
+        rows = session.execute(select(Daily)).scalars().all()
 
-    if str(crsid) not in users_data['crsid'].values:
-        print(crsid,'not found in',users_data['crsid'].values)
-        return redirect(url_for('setup'))
-    personal_data = users_data.loc[users_data['crsid'] == crsid].to_dict('records')[0]
+        # Initialize the dictionary
+        state_dates = {}
+        race_dates = {}
+        event_dates = {}
 
-    username = personal_data['Preferred Name'] +' '+ personal_data['Last Name']
+        # Process each row
+        for row in rows:
+            date_str = row.date.strftime('%Y%m%d')  # Format date as YYYYMMDD
+            races = row.races
+            events = row.events
 
-    weeks = [1,2,3,4,5,6,7,8,9,10]
-    selected_week = 1
+            if races:
+                race_dates[date_str] = races
+
+            if events:
+                event_dates[date_str] = events
+
+            user_data = json.loads(row.user_data) if row.user_data else {}
+
+            # Check if the crsid is in user_data
+            if crsid in user_data:
+                state = user_data[crsid]
+
+                # Initialize list for state if not already present
+                if state not in state_dates:
+                    state_dates[state] = []
+
+                # Add the date to the list for the specific state
+                state_dates[state].append(date_str)
+
+        return state_dates, race_dates, event_dates
+
+    existingData, raceDays, eventDays = load_user_data(crsid)
+
+    print(raceDays)
 
     context = {
-        'selected_week': selected_week,
         'existingData': existingData,
         'crsid': crsid,
-        'months': ['October 2024'],
         'username': username,
         'hours_of_day': hours_of_day,
-        'existing': existing,
-        'superuser': superuser
+        'existing': True,
+        'superuser': superuser,
+        'race_days': raceDays,
+        'event_days': eventDays
     }
 
     now = datetime.now()
     year = now.year
     month = now.month
+    current_month = int(month)
+
+    selected_month = request.form.get('month', now.month)
+
+    if 'refmonth' in request.args:
+        selected_month=request.args.get('refmonth')
+
+    # Convert the selected month to an integer
+    selected_month = int(selected_month)
 
     # Get days in the month
-    _, num_days = calendar.monthrange(year, month)
-    days_of_week = calendar.weekheader(2).split()
-    weeks = []
-    day_cells = [[] for _ in range(6)]  # 6 weeks max
+    # Get days of the week (short format like "Mon", "Tue", etc.)
+    days_of_week = calendar.weekheader(3).split()
 
-    day_count = 1
-    for week in calendar.monthcalendar(year, month):
-        for i, day in enumerate(week):
-            if day != 0:
-                day_cells[week[0] // 7].append(day)
-            else:
-                day_cells[week[0] // 7].append('')
+    # Get a matrix where each list represents a week, and days outside the month are zero
+    month_weeks = calendar.monthcalendar(year, selected_month)
+
+    months = [(m, calendar.month_name[m]) for m in range(current_month, 13)]
 
     return render_template('calendar.html', **context, days_of_week=days_of_week,
-                           day_cells=day_cells,
+                           month_weeks=month_weeks, months=months,
                            year=year,
-                           month=month)
+                           month=selected_month)
 
 @app.route('/submit_availability', methods=['POST'])
 def submit_availability():
     crsid = auth_decorator.principal
 
     data = request.get_json()
-    name = data.get('name')
     times = data.get('times', [])
-    week = data.get('week')
-
-    # Organize times into different categories
-    availability = {
-        'available': [],
-        'not-available': [],
-        'if-needs-be': []
-    }
+    month = data.get('month')
 
     for time_entry in times:
         try:
             time, state = time_entry.split('|')
-            if state in availability:
-                availability[state].append(time)
-        except ValueError:
+
+            date = datetime.strptime(time, '%Y%m%d').date()
+
+            row = session.get(Daily, date)
+
+            if row:
+                if row.user_data:
+                    user_data = json.loads(row.user_data)
+                else:
+                    user_data = {}
+
+                # Update the user_data for the specific crsid
+                user_data[crsid] = state
+
+                row.user_data = json.dumps(user_data)
+                session.merge(row)
+
+            else:
+                new_row = Daily(date=date, user_data=json.dumps({crsid: state}))
+                session.add(new_row)
+
+        except ValueError as e:
+            print(f"Error processing time entry {time_entry}: {e}")
             continue
 
-    file_path = f'./data/{crsid}/availability.json'
+    # Commit all inserts to the database
+    session.commit()
 
-    # Ensure the directory exists
-    if not os.path.exists(file_path):
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-        user_data = {
-            'weeks': {
-                f'{week}': availability
-            }
-        }
-
-        # Write the JSON data to the file
-        with open(file_path, 'w') as f:
-            json.dump(user_data, f, indent=4)
-
-        return(redirect(url_for('set_availabilities')))
-
-    else:
-        with open(file_path, 'r') as f:
-            avails = json.load(f)
-
-        if week not in avails['weeks']:
-            avails['weeks'][week] = {
-                'available': [],
-                'not-available': [],
-                'if-needs-be': []
-            }
-
-        avails['weeks'][week] = availability
-
-        with open(file_path, 'w') as f:
-            json.dump(avails, f, indent=4)
-
-        return redirect(url_for('set_availabilities'))
+    return redirect(url_for('set_availabilities', refmonth=month))
 
 
 
@@ -1919,7 +1926,7 @@ def planner():
     return render_template('planner.html', availabilities=datadict,
                            days_of_week=days_of_week, hours_of_day=hours_of_day, superuser=superuser)
 
-
+# Needs updating for new availabilities system
 @app.route('/delete_user', methods=['GET', 'POST'])
 def delete_user():
     # Not implemented yet!
@@ -1969,6 +1976,20 @@ def delete_user():
                 <button type="submit">Confirm</button>
             </form>
     ''', delid=delid)
+
+@app.route('/captains/races')
+def set_races():
+    crsid = auth_decorator.principal
+
+    if crsid not in superusers:
+        return redirect(url_for('forbidden', ref='captains'))
+
+    return(render_template('races.html'))
+
+@app.route('/races')
+def view_races():
+    crsid = auth_decorator.principal
+    return ("Not Implemented!")
 
 def superuser_check(crsid, superusers):
     if crsid in superusers:
