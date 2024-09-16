@@ -14,13 +14,27 @@
         background-color: #FF6F6F !important; /* Red for No */
         color: white;
     }
-    .equal-width{
-        width: 100px;
-    }
     .disabled-td{
         cursor: not-allowed;
         background-color: #EEE !important;
         color: #9E9999 !important;
+    }
+
+    .flex-container {
+        display: flex;
+        flex-wrap: wrap; /* Allow items to wrap within the container */
+    }
+    .flex-item {
+        flex: 0 1 auto; /* Flexibly grow and shrink as needed */
+        min-width: 10px; /* Minimum width for the input field */
+        max-width: none;
+        display: inline-flex; /* Ensures the items only take the space they need */
+        width: auto !important;
+        box-sizing: content-box; /* Ensure padding doesn't affect width */
+    }
+    button {
+        flex: 0 1 auto; /* Prevent the button from stretching */
+        white-space: nowrap; /* Prevent the button text from wrapping */
     }
 </style>
 
@@ -28,7 +42,7 @@
     <h3 class="mb-4">Welcome to the Captain's Space</h3>
 
     <a type="button" class="btn btn-primary mb-3" href='/captains/races'>View and Change Races and Events</a>
-
+    <a type="button" class="btn btn-primary mb-3" href='/captains/boats'>View and Change Boats</a>
 
 
     <div class="row mb-3">
@@ -40,10 +54,10 @@
             </select>
         </div>
         <div class="col-md-3">
-            <select id="boatFilter" class="form-select" onchange="filter()">
-                <option value="all">All Boats</option>
-                {% for boat in unique_boats %}
-                    <option value="{{ boat }}">{{ boat }}</option>
+            <select id="tagFilter" class="form-select" onchange="filter()">
+                <option value="all">All Rowers</option>
+                {% for tag in unique_tags %}
+                    <option value="{{ tag }}">{{ tag }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -59,19 +73,19 @@
     <table class="table table-bordered table-hover table-striped">
         <thead class="table-dark">
             <tr>
-                <th scope="col">CRSID</th>
-                <th scope="col">Name</th>
-                <th scope="col">Squad</th>
-                <th scope="col" class="equal-width">Bowside</th>
-                <th scope="col" class="equal-width">Strokeside</th>
-                <th scope="col" class="equal-width">Cox</th>
-                <th scope="col">Boat</th>
-                <th scope="col">Action</th>
+                <th scope="col" width="5%">CRSID</th>
+                <th scope="col" width="10%">Name</th>
+                <th scope="col" width="7.5%">Squad</th>
+                <th scope="col" width="5%">Bowside</th>
+                <th scope="col" width="5%">Strokeside</th>
+                <th scope="col" width="5%">Cox</th>
+                <th scope="col" width="20%">Tags</th>
+                <th scope="col" width="10%">Action</th>
             </tr>
         </thead>
         <tbody id="userTableBody">
             {% for user in users %}
-            <tr class="squad-{{ user.squad|lower }} boat-{{ user.boats|format_boats }}">
+            <tr class="squad-{{ user.squad|lower }} tag-{{ user.tags|format_tags }}">
                 <td>{{ user.crsid }}</td>
                 <td>{{ user.preferred_name+' '+user.last_name }}</td>
                 <td>{{ user.squad }}</td>
@@ -88,26 +102,29 @@
                     {{ user.cox }}
                 </td>
 
-                <td>
-                    <div id="boats-{{ user.crsid }}">
-                        {% if user.boats %}
-                            {% for boat in user.boats.split(',') %}
-                                <div class="d-flex align-items-center mb-1">
-                                    <input type="text" name="boat_{{ user.crsid }}[]" class="form-control me-2 disabled-td" value="{{ boat }}" placeholder="Enter new boat" readonly data-boat="{{ boat }}" />
-                                    <button type="button" class="btn btn-danger btn-sm delete-boat" data-crsid="{{ user.crsid }}" data-boat="{{ boat }}">X</button>
-                                </div>
-                            {% endfor %}
-                        {% endif %}
-                        <div id="new-boats-{{ user.crsid }}">
+                <td style="width: 600px;">
+                    <div id="tags-{{ user.crsid }}">
+                        <div class="flex-container">
+                            {% if user.tags %}
+                                {% for tag in user.tags.split(',') %}
+                                    <div class="flex-item d-flex align-items-center mb-1">
+                                        <button type="button" name="tag_{{ user.crsid }}[]" class="btn btn-secondary me-1 disabled-td" data-tag="{{ tag }}" style="cursor:default">{{ tag }}</button>
+                                        <button type="button" class="btn btn-danger btn-sm delete-tag me-2" data-crsid="{{ user.crsid }}" data-tag="{{ tag }}">X</button>
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+
+                        <div id="new-tags-{{ user.crsid }}">
                             <!-- New crew fields will be added here -->
                         </div>
-                        <button type="button" class="btn btn-success btn-sm mt-2" id="add-boat-{{ user.crsid }}" data-crsid="{{ user.crsid }}">Add Crew</button>
-                        <p hidden> {{ user.boats }} </p> <!-- Hacky, but works -->
+
+                        <button type="button" class="btn btn-success btn-sm mt-2" id="add-tag-{{ user.crsid }}" data-crsid="{{ user.crsid }}">Add Tag</button>
                     </div>
                 </td>
 
                 <td>
-                    <a href="{{ url_for('plot', crsid=user.crsid) }}" class="btn btn-primary btn-sm">View Profile</a>
+                    <a href="{{ url_for('plot', crsid=user.crsid) }}" class="btn btn-primary btn-sm mb-2">View Profile</a>
 
                     <a href="{{ url_for('delete_user', crsid=user.crsid) }}" class="btn btn-danger btn-sm">Delete User</a>
                 </td>
@@ -117,21 +134,18 @@
         </tbody>
     </table>
 
-    <button type="submit" class="btn btn-success mt-3">Commit Crews</button>
+    <button type="submit" class="btn btn-success mt-3">Commit Changes</button>
 
     </form>
 
     </div>
 </div>
 
-<!-- Optionally include Bootstrap JS for interactivity -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         function filter() {
             var squadFilter = document.getElementById('squadFilter').value;
-            var boatFilter = document.getElementById('boatFilter').value;
+            var tagFilter = document.getElementById('tagFilter').value;
             var searchQuery = document.getElementById('nameSearch').value.toLowerCase();
             var rows = document.querySelectorAll('#userTableBody tr');
 
@@ -140,12 +154,12 @@
                 var squadMatch = (squadFilter === 'all' || row.classList.contains('squad-' + squadFilter));
                 var isBoth = row.classList.contains('squad-both');
 
-                // Check boat filter
-                var boatMatch = boatFilter === 'all'; // Start with true if 'all' is selected
-                if (boatFilter !== 'all') {
-                    var boats = row.querySelectorAll('[data-boat]');
-                    boatMatch = Array.from(boats).some(function(boatField) {
-                        return boatField.getAttribute('data-boat').toLowerCase() === boatFilter.toLowerCase();
+                // Check tag filter
+                var tagMatch = tagFilter === 'all'; // Start with true if 'all' is selected
+                if (tagFilter !== 'all') {
+                    var tags = row.querySelectorAll('[data-tag]');
+                    tagMatch = Array.from(tags).some(function(tagField) {
+                        return tagField.getAttribute('data-tag').toLowerCase() === tagFilter.toLowerCase();
                     });
                 }
 
@@ -155,12 +169,12 @@
                     return cell.textContent.toLowerCase().includes(searchQuery);
                 });
 
-                var boatCells = row.querySelectorAll('[data-boat]');
-                var boatNameMatch = Array.from(boatCells).some(function(cell) {
-                    return cell.getAttribute('data-boat').toLowerCase().includes(searchQuery);
+                var tagCells = row.querySelectorAll('[data-tag]');
+                var tagNameMatch = Array.from(tagCells).some(function(cell) {
+                    return cell.getAttribute('data-tag').toLowerCase().includes(searchQuery);
                 });
 
-                if ((squadMatch || isBoth) && boatMatch && (nameMatch || boatNameMatch)) {
+                if ((squadMatch || isBoth) && tagMatch && (nameMatch || tagNameMatch)) {
                     row.style.display = ''; // Show row if it matches all filters
                 } else {
                     row.style.display = 'none'; // Hide row
@@ -169,19 +183,19 @@
         }
 
         document.getElementById('squadFilter').addEventListener('change', filter);
-        document.getElementById('boatFilter').addEventListener('change', filter);
+        document.getElementById('tagFilter').addEventListener('change', filter);
         document.getElementById('nameSearch').addEventListener('input', filter);
 
         filter();
 
-        document.querySelectorAll('.delete-boat').forEach(button => {
+        document.querySelectorAll('.delete-tag').forEach(button => {
             button.addEventListener('click', function() {
                 const crsid = this.getAttribute('data-crsid');
-                const boat = this.getAttribute('data-boat');
+                const tag = this.getAttribute('data-tag');
 
                 // Find the input field and delete button
-                const boatDiv = this.parentElement;
-                boatDiv.remove();
+                const tagDiv = this.parentElement;
+                tagDiv.remove();
 
                 // Optional: Use JavaScript to track changes on the client side
                 // You might need to update the hidden form or handle the update in the backend
@@ -192,18 +206,18 @@
 
         // Function to add new crew fields
         function addNewCrewFields(crsid) {
-            const container = document.getElementById(`new-boats-${crsid}`);
+            const container = document.getElementById(`new-tags-${crsid}`);
             const newField = document.createElement('div');
             newField.className = 'd-flex align-items-center mb-1';
             newField.innerHTML = `
-                <input type="text" name="boat_${crsid}[]" class="form-control me-2" placeholder="Enter new boat" />
+                <input type="text" name="tag_${crsid}[]" class="form-control me-2" placeholder="Enter new tag" />
                 <button type="button" class="btn btn-danger btn-sm remove-field">Remove</button>
             `;
             container.appendChild(newField);
         }
 
         // Attach click event to 'Add Crew' buttons
-        document.querySelectorAll('[id^=add-boat-]').forEach(button => {
+        document.querySelectorAll('[id^=add-tag-]').forEach(button => {
             button.addEventListener('click', function() {
                 const crsid = this.getAttribute('data-crsid');
                 addNewCrewFields(crsid);

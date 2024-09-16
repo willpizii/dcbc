@@ -24,4 +24,5 @@ class User(Base):
 
     logbook = Column(Boolean)
 
+    tags = Column(Text)
     boats = Column(Text)

@@ -79,6 +79,27 @@
     td, th {
         min-width: 100px;
     }
+
+    .flex-container {
+        display: flex;
+        flex-wrap: wrap; /* Allow items to wrap within the container */
+    }
+    .flex-item {
+        flex: 0 1 auto; /* Flexibly grow and shrink as needed */
+        min-width: 10px; /* Minimum width for the input field */
+        max-width: none;
+        display: inline-flex; /* Ensures the items only take the space they need */
+        width: auto !important;
+        box-sizing: content-box; /* Ensure padding doesn't affect width */
+    }
+    button {
+        flex: 0 1 auto; /* Prevent the button from stretching */
+        white-space: nowrap; /* Prevent the button text from wrapping */
+    }
+    #add-boat {
+        display: block; /* Makes sure it's treated as a block element */
+        margin-left: auto; /* Pushes the button to the right */
+    }
 </style>
 
 <div class="container mt-5">
@@ -86,47 +107,109 @@
         <div class="p-3 border rounded bg-light">
             <h3 class="mb-4 "> Upcoming Races and Events </h3>
 
-            <table id="availabilityTable" border="1" class='table table-hover'>
+            <table id="availabilityTable" border="1" class='table table-hover table-striped'>
                 <thead>
                     <tr>
-                        <th> Date </th>
-                        <th> Event </th>
-                        <th> Type </th>
-                        <th> Who? </th>
+                        <th style="width:15%">Date</th>
+                        <th style="width:25%">Event</th>
+                        <th style="width:10%">Type</th>
+                        <th style="width:25%" title="Who is racing in this race or going to this event?">Who?</th>
                     </tr>
                 </thead>
                 <tbody id='eventsBody'>
+                    {% for event in races_events %}
+                        <tr>
+                            <td> {{ event.date }} </td>
+                            <td> {{ event.name }} </td>
+                            <td> {{ event.type }} </td>
+                            <td>
+                                {% for crew in event.crews %}
+                                    <div class='btn btn-secondary'> {{crew}} </div>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
 
         <h3 class="mb-4 mt-4"> Add New Race or Event </h3>
         <form method="POST" id="addEvent" action="/captains/races">
-            <table class='table table-borderless'>
-                <tr>
-                    <td>
-                        <input type="date" id="date" name="date" class="form-control" required>
-                    </td>
-                    <td>
-                        <input type="text" id="name" name="name" required>
-                    </td>
-                    <td>
-                        <select id="type" name="type">
-                            <option>Race</option>
-                            <option>Event</option>
-                        </select>
-                    </td>
-                    <td>
-                        Crews
-                    </td>
-                </tr>
+            <table class="table border-0">
+                <thead class="border-bottom-custom">
+                    <tr>
+                        <th style="width:15%">Date</th>
+                        <th style="width:25%">Event</th>
+                        <th style="width:10%">Type</th>
+                        <th style="width:25%" title="Who is racing in this race or going to this event?">Who?</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <input type="date" id="date" name="date" class="form-control" required>
+                        </td>
+                        <td>
+                            <input type="text" class='form-control' id="name" name="name" required>
+                        </td>
+                        <td>
+                            <select id="type" name="type" class="form-control">
+                                <option>Race</option>
+                                <option>Event</option>
+                            </select>
+                        </td>
+                        <td>
+                            <div id="new-boats" class="flex-container">
+                            <!-- New crew fields will be added here -->
+                                <div class='d-flex align-items-center mb-1'>
+                                    <input type="text" name="boat_[]" class="form-control me-2" placeholder="Which crews?" />
+                                    <button type="button" class="btn btn-danger btn-sm remove-field">X</button>
+                                </div>
+                                <button type="button" class="btn btn-success btn-sm" id="add-boat" >+</button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
             </table>
+            <div class="row mb-3">
+                <div class="col text-center">
+                    <button type="submit" class="btn btn-primary">Submit</button>
+                </div>
+            </div>
         </form>
     </div>
 </div>
 
 <script>
+    // Lifted from captains.html with significant(!) removals
+    document.addEventListener('DOMContentLoaded', function() {
+        // Function to add new crew fields
+        function addNewCrewFields() {
+            const container = document.getElementById(`new-boats`);
+            const newField = document.createElement('div');
+            newField.className = 'd-flex align-items-center mb-1';
+            newField.innerHTML = `
+                <input type="text" name="boat_[]" class="form-control me-2" placeholder="Enter new boat" />
+                <button type="button" class="btn btn-danger btn-sm remove-field">X</button>
+            `;
+            const children = container.children;
+            container.insertBefore(newField, children[children.length - 1]);
+        }
 
+        // Attach click event to 'Add Crew' buttons
+        document.querySelectorAll('[id^=add-boat]').forEach(button => {
+            button.addEventListener('click', function() {
+                addNewCrewFields();
+            });
+        });
+
+        // Attach click event to 'Remove' buttons inside the new crew fields
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove-field')) {
+                e.target.parentElement.remove();
+            }
+        });
+    });
 </script>
 
 {% endblock %}

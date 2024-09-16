@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, String, Text, Boolean
 from models.base import Base  # Import the shared Base
 
 # Define the table structure with only the required columns
@@ -15,3 +15,7 @@ class Boat(Base):
     three = Column(String(255))
     two = Column(String(255))
     bow = Column(String(255))
+
+    tags = Column(Text)
+
+    active = Column(Boolean)

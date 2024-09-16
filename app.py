@@ -40,7 +40,7 @@ from cryptography.fernet import Fernet
 
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -201,11 +201,13 @@ def flatten_data(data):
 
     return df
 
-# Redirect empty requests to login
-@app.route('/')
-def default():
+
+# Redirect 404 requests (should handle this better?)
+@app.route('/<path:path>')
+def catch_all(path):
     resp = make_response(redirect(url_for('login')))
     return resp
+
 
 # Forbidden page - could be done more properly with exception handling!
 @app.route('/sorry')
@@ -1717,12 +1719,12 @@ def captains():
     crsid = auth_decorator.principal
     users = session.execute(select(User)).scalars().all()
 
-    def format_boats(boats):
-        if boats:
-            return boats.replace(',', ' ').replace(' ', '-').lower()
+    def format_tags(tags):
+        if tags:
+            return tags.replace(',', ' ').replace(' ', '-').lower()
         return ''
 
-    app.jinja_env.filters['format_boats'] = format_boats
+    app.jinja_env.filters['format_tags'] = format_tags
 
     if crsid not in superusers:
         return redirect(url_for('forbidden', ref='captains'))
@@ -1731,43 +1733,43 @@ def captains():
         # Retrieve all user CRSID values
         user_crsids = [user.crsid for user in session.execute(select(User)).scalars().all()]
 
-        # Process boat updates
+        # Process tag updates
         for crsid in user_crsids:
-            boats = request.form.getlist(f'boat_{crsid}[]')
-            boats = [boat for boat in boats if boat.strip()]
-            # Update the User table with the new boat values
+            tags = request.form.getlist(f'tag_{crsid}[]')
+            tags = [tag for tag in tags if tag.strip()]
+            # Update the User table with the new tag values
             session.execute(
                 update(User)
                 .where(User.crsid == crsid)
-                .values(boats=','.join(boats))
+                .values(tags=','.join(tags))
             )
         session.commit()
         return redirect(url_for('captains'))
 
-    unique_boats = set()
+    unique_tags = set()
     for user in users:
-        if user.boats:
-            boats = user.boats.split(',')
-            for boat in boats:
-                unique_boats.add(boat.strip())
+        if user.tags:
+            tags = user.tags.split(',')
+            for tag in tags:
+                unique_tags.add(tag.strip())
 
-    return(render_template(users=users,unique_boats=sorted(unique_boats),
+    return(render_template(users=users,unique_tags=sorted(unique_tags),
             template_name_or_list='captains.html'))
 
 
 @app.route('/commit_crews', methods=['POST'])
 def commit_crews():
     for crsid, boat_list in request.form.items():
-        if crsid.startswith('boat_'):
+        if crsid.startswith('tag_'):
             crsid = crsid.split('_', 1)[1]
-            boats = boat_list.split(',')  # Assuming boats are comma-separated
+            tags = boat_list.split(',')  # Assuming boats are comma-separated
 
             # Fetch user by CRSId
             user = session.query(User).filter(User.crsid == crsid).first()
             if user:
-                existing_boats = set(user.boats.split(',')) if user.boats else set()
-                updated_boats = existing_boats.union(set(boats))
-                user.boats = ','.join(updated_boats)
+                existing_tags = set(user.tags.split(',')) if user.tags else set()
+                updated_tags = existing_tags.union(set(tags))
+                user.tags = ','.join(updated_tags)
                 session.commit()
 
     return redirect(url_for('captains'))
@@ -1821,8 +1823,6 @@ def set_availabilities():
         return state_dates, race_dates, event_dates
 
     existingData, raceDays, eventDays = load_user_data(crsid)
-
-    print(raceDays)
 
     context = {
         'existingData': existingData,
@@ -1977,14 +1977,113 @@ def delete_user():
             </form>
     ''', delid=delid)
 
-@app.route('/captains/races')
+@app.route('/captains/races', methods=['GET', 'POST'])
 def set_races():
     crsid = auth_decorator.principal
 
     if crsid not in superusers:
         return redirect(url_for('forbidden', ref='captains'))
 
-    return(render_template('races.html'))
+    if request.method == 'POST':
+        crews = request.form.getlist(f'boat_[]')
+        crews = [crew for crew in crews if crew.strip()] # will need better handling!
+
+        add_event = {
+            'name': request.form.get('name'),
+            'date': request.form.get('date'),
+            'type': request.form.get('type'),
+            'crews': ','.join(crews)
+        }
+
+        new_event = Event(**add_event)
+        session.merge(new_event)
+
+        if request.form.get('type') == 'Race':
+            into_date = Daily(date = request.form.get('date'), races = request.form.get('name'))
+        else:
+            into_date = Daily(date = request.form.get('date'), events = request.form.get('name'))
+
+        session.merge(into_date)
+        # Commit all inserts to the database
+        session.commit()
+
+    rows = session.execute(select(Event).order_by(asc(Event.date))).scalars().all()
+
+    races_events = []
+
+    for row in rows:
+        races_events.append({
+                'name': row.name,
+                'date': row.date,
+                'type': row.type,
+                'crews': row.crews.split(',') if row.crews else []
+            })
+
+    return(render_template('races.html', races_events = races_events))
+
+# boat builder!
+@app.route('/captains/boats', methods=['GET', 'POST'])
+def set_boats():
+    crsid = auth_decorator.principal
+
+    if crsid not in superusers:
+        return redirect(url_for('forbidden', ref='captains'))
+
+    boats = session.execute(select(Boat)).scalars().all()
+
+    boats_list = []
+
+    for row in boats:
+        boats_list.append({
+                'name': row.name,
+                'tags': row.tags.split(',') if row.tags else []
+            })
+
+    return(render_template('boats.html', boats_list = boats_list))
+
+''' boats_list.append({
+                'name': row.name,
+                'cox': row.cox if row.cox else None,
+                'stroke': row.stroke if row.stroke else None,
+                'seven': row.seven if row.seven else None,
+                'six': row.six if row.six else None,
+                'five': row.five if row.five else None,
+                'four': row.four if row.four else None,
+                'three': row.three if row.three else None,
+                'two': row.two if row.two else None,
+                'bow': row.bow if row.bow else None,
+                'tags': row.tags.split(',') if row.tags else []
+            })'''
+
+@app.route('/captains/boats/edit')
+def edit_boat():
+    crsid = auth_decorator.principal
+
+    if crsid not in superusers:
+        return redirect(url_for('forbidden', ref='captains'))
+
+    boats = session.execute(select(Boat)).scalars().all()
+
+    boats_list = []
+
+    for row in boats:
+        boats_list.append({
+                'name': row.name,
+                'cox': row.cox if row.cox else None,
+                'stroke': row.stroke if row.stroke else None,
+                'seven': row.seven if row.seven else None,
+                'six': row.six if row.six else None,
+                'five': row.five if row.five else None,
+                'four': row.four if row.four else None,
+                'three': row.three if row.three else None,
+                'two': row.two if row.two else None,
+                'bow': row.bow if row.bow else None,
+                'tags': row.tags.split(',') if row.tags else []
+            })
+
+    user_crsids = [{str(user.crsid):str(user.preferred_name+' '+user.last_name)} for user in session.execute(select(User)).scalars().all()]
+
+    return(render_template('boats.html', boats_list = boats_list)) # temp
 
 @app.route('/races')
 def view_races():
