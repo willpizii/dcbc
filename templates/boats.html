@@ -4,25 +4,41 @@
 
 <div class="container py-4">
     <h3 class="mb-4">Boat Time</h3>
-
-    <div class="col-md-6 mb-4">
-        <input type="text" id="tagSearch" class="form-control" placeholder="Filter by Tag" oninput="filter()">
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <input type="text" id="tagSearch" class="form-control" placeholder="Filter by Anything" oninput="filter()">
+        </div>
+        <div class="col-md-2">
+            <a href="{{ url_for('edit_boat', boat='new')}}" class='btn btn-primary'>New Boat</a>
+        </div>
     </div>
     <table class="table table-bordered table-hover table-striped">
         <thead>
             <tr>
-                <th scope="col" width="40%">Boat</th>
-                <th scope="col" width="60%">Tags</th>
+                <th scope="col" width="30%">Boat</th>
+                <th scope="col" width="30%">Shell</th>
+                <th scope="col" width="20%">Tags</th>
+                <th scope="col" width="20%">Active</th>
             </tr>
         </thead>
         <tbody id="userTableBody">
             {% for boat in boats_list %}
                 <tr>
-                    <td> <a href={{ url_for("edit_boat", boat=boat.name) }}>{{boat.name}}</a> </td>
+                    <td> <a href={{ url_for("edit_boat", boat=boat.name) }} class='btn btn-primary'>{{boat.name}}</a> </td>
+                    <td>
+                        <p>{{ boat.shell }}</p>
+                    </td>
                     <td>
                         {% for tag in boat.tags %}
                             <div class='btn btn-secondary'> {{tag}} </div>
                         {% endfor %}
+                    </td>
+                    <td>
+                        <input type="radio" class="btn-check" name="{{boat.name}}-radio" id="{{boat.name}}-active" autocomplete="off" checked>
+                        <label class="btn btn-outline-success" for="{{boat.name}}-active">Active</label>
+
+                        <input type="radio" class="btn-check" name="{{boat.name}}-radio" id="{{boat.name}}-inactive" autocomplete="off">
+                        <label class="btn btn-outline-danger" for="{{boat.name}}-inactive">Inactive</label>
                     </td>
                 </tr>
             {% endfor %}
@@ -39,12 +55,12 @@
 
             rows.forEach(function(row) {
                 // Check search query
-                var tagsCells = row.querySelectorAll('td:nth-child(2) div'); // Each tag is inside a div
-                var tagMatch = Array.from(tagsCells).some(function(cell) {
+                var cells = row.querySelectorAll('td'); // Each tag is inside a div
+                var rowMatch = Array.from(cells).some(function(cell) {
                     return cell.textContent.toLowerCase().includes(searchQuery);
                 });
 
-                if (tagMatch) {
+                if (rowMatch) {
                     row.style.display = ''; // Show row if it matches the search
                 } else {
                     row.style.display = 'none'; // Hide row

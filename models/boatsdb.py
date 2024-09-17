@@ -17,5 +17,8 @@ class Boat(Base):
     bow = Column(String(255))
 
     tags = Column(Text)
+    layout = Column(Text)
+    shell = Column(Text)
+    crew_type = Column(Text)
 
     active = Column(Boolean)

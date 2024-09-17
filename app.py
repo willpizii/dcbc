@@ -2036,54 +2036,87 @@ def set_boats():
     for row in boats:
         boats_list.append({
                 'name': row.name,
-                'tags': row.tags.split(',') if row.tags else []
+                'tags': row.tags.split(',') if row.tags else [],
+                'shell': row.shell,
+                'active': row.active if row.active is not None else False,
             })
 
     return(render_template('boats.html', boats_list = boats_list))
 
-''' boats_list.append({
-                'name': row.name,
-                'cox': row.cox if row.cox else None,
-                'stroke': row.stroke if row.stroke else None,
-                'seven': row.seven if row.seven else None,
-                'six': row.six if row.six else None,
-                'five': row.five if row.five else None,
-                'four': row.four if row.four else None,
-                'three': row.three if row.three else None,
-                'two': row.two if row.two else None,
-                'bow': row.bow if row.bow else None,
-                'tags': row.tags.split(',') if row.tags else []
-            })'''
-
-@app.route('/captains/boats/edit')
+@app.route('/captains/boats/edit', methods=['GET', 'POST'])
 def edit_boat():
     crsid = auth_decorator.principal
 
     if crsid not in superusers:
         return redirect(url_for('forbidden', ref='captains'))
 
-    boats = session.execute(select(Boat)).scalars().all()
+    if request.method == 'POST':
+        # Handle the positions
+        max_positions = ['cox', 'stroke', 'seven', 'six', 'five', 'four', 'three', 'two', 'bow']
 
-    boats_list = []
+        id_layout = {}
 
-    for row in boats:
-        boats_list.append({
-                'name': row.name,
-                'cox': row.cox if row.cox else None,
-                'stroke': row.stroke if row.stroke else None,
-                'seven': row.seven if row.seven else None,
-                'six': row.six if row.six else None,
-                'five': row.five if row.five else None,
-                'four': row.four if row.four else None,
-                'three': row.three if row.three else None,
-                'two': row.two if row.two else None,
-                'bow': row.bow if row.bow else None,
-                'tags': row.tags.split(',') if row.tags else []
-            })
+        for position in max_positions:
+            if f'side-{position}' in request.form:
+                _side_ = request.form.get(f'side-{position}')
+                id_layout.update({position: _side_})
 
-    user_crsids = [{str(user.crsid):str(user.preferred_name+' '+user.last_name)} for user in session.execute(select(User)).scalars().all()]
+        boat_info = {
+                'name': request.form.get('boat_name'),
+                'crew_type': request.form.get('boat_type'),
+                'shell': request.form.get('boat_shell'),
+                'cox': request.form.get('seat-cox') if 'seat-cox' in request.form else None,
+                'stroke': request.form.get('seat-stroke') if 'seat-stroke' in request.form else None,
+                'seven': request.form.get('seat-seven') if 'seat-seven' in request.form else None,
+                'six': request.form.get('seat-six') if 'seat-six' in request.form else None,
+                'five': request.form.get('seat-five') if 'seat-five' in request.form else None,
+                'four': request.form.get('seat-four') if 'seat-four' in request.form else None,
+                'three': request.form.get('seat-three') if 'seat-three' in request.form else None,
+                'two': request.form.get('seat-two') if 'seat-two' in request.form else None,
+                'bow': request.form.get('seat-bow') if 'seat-bow' in request.form else None,
+                'layout': json.dumps(id_layout),
+            }
 
-    return(render_template('boats.html', boats_list = boats_list)) # temp
+        new_boat = Boat(**boat_info)
+
+        # Add (safely) to session
+        session.merge(new_boat)
+
+        # Commit all inserts to the database
+        session.commit()
+
+        return(redirect(url_for('set_boats')))
+
+    if 'boat' in request.args:
+        boat_name = request.args.get('boat')
+
+        if boat_name != 'new':
+            boats = session.execute(select(Boat).where(Boat.name == boat_name)).scalars().all()
+
+            boats_list = {}
+
+            for row in boats:
+                boats_list.update({
+                        'name': row.name,
+                        'cox': row.cox if row.cox else None,
+                        'stroke': row.stroke if row.stroke else None,
+                        'seven': row.seven if row.seven else None,
+                        'six': row.six if row.six else None,
+                        'five': row.five if row.five else None,
+                        'four': row.four if row.four else None,
+                        'three': row.three if row.three else None,
+                        'two': row.two if row.two else None,
+                        'bow': row.bow if row.bow else None,
+                        'tags': row.tags.split(',') if row.tags else [],
+                        'crew_type': row.crew_type if row.crew_type else None,
+                        'shell': row.shell if row.shell else None,
+                    })
+        else:
+            boats_list = {'name': 'new',}
+
+    user_crsids = {str(user.crsid):str(user.preferred_name+' '+user.last_name) for user in session.execute(select(User)).scalars().all()}
+
+    return(render_template('editboat.html', boats_list = boats_list, user_list = user_crsids)) # temp
 
 @app.route('/races')
 def view_races():

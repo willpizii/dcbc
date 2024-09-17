@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+select.form-select option.disabled-option {
+    color: #6c757d; /* Greyed out color */
+}
+</style>
+
+<form action="" method="POST" id="boatForm">
+<div class="container py-4">
+    <h3 class="mb-4">Time to Edit Boats</h3>
+    <div class="row mb-2">
+        <div class="col-md-3">
+            {% if boats_list.name != 'new' %}
+                <input class="form-control" disabled value="{{ boats_list.name }}"></input>
+                <input hidden id="boat_name" name="boat_name" value="{{ boats_list.name }}"></input>
+            {% else %}
+                <input id="boat_name" class="form-control" name="boat_name" placeholder="New Boat..."></input>
+            {% endif %}
+        </div>
+        <div class="col-md-3">
+            <select id="boatType" class="form-select mb-3" onchange="filter()" name="boat_type">
+                <option value="eight">Eight</option>
+                <option value="coxed-four">Coxed Four / Quad</option>
+                <option value="coxless-four">Coxless Four / Quad</option>
+                <option value="pair">Pair / Double</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            {% if boats_list.shell %}
+                <input id="boat_name" class="form-control" name="boat_shell" value="{{ boats_list.shell }}"></input>
+            {% else %}
+                <input id="boat_name" class="form-control" name="boat_shell" placeholder="Which boat?"></input>
+            {% endif %}
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary" id="saveCrewButon">Save Crew</button>
+        </div>
+    </div>
+    <table class="table table-bordered table-hover table-striped">
+        <thead>
+            <tr>
+                <th scope="col" width="10%">Seat</th>
+                <th scope="col" width="10%">Side</th>
+                <th scope="col" width="60%">Name</th>
+            </tr>
+        </thead>
+        <tbody id="userTableBody">
+            <!-- content populated by JS below -->
+        </tbody>
+    </table>
+</div>
+</form>
+
+<script>
+    window.boatsList = {{ boats_list | tojson }};
+    window.user_list = {{ user_list | tojson }};
+    window.selectedType = "{{ boats_list.crew_type | default('eight') }}";
+</script>
+<script src="{{ url_for('static', filename='js/editboat.js') }}"></script>
+{% endblock %}

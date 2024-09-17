@@ -4,7 +4,7 @@
 <style>
     .yes {
         background-color: #98FB98 !important; /* Green for Yes */
-        color: white;
+        color: black;
     }
     .limited {
         background-color: #FFFFE0 !important; /* Yellow for Limited */
@@ -12,7 +12,7 @@
     }
     .no {
         background-color: #FF6F6F !important; /* Red for No */
-        color: white;
+        color: black;
     }
     .disabled-td{
         cursor: not-allowed;
@@ -62,7 +62,7 @@
             </select>
         </div>
         <div class="col-md-6">
-            <input type="text" id="nameSearch" class="form-control" placeholder="Search by Name or Boat" oninput="filter()">
+            <input type="text" id="nameSearch" class="form-control" placeholder="Search by Name or Tag" oninput="filter()">
         </div>
     </div>
 
@@ -109,6 +109,7 @@
                                 {% for tag in user.tags.split(',') %}
                                     <div class="flex-item d-flex align-items-center mb-1">
                                         <button type="button" name="tag_{{ user.crsid }}[]" class="btn btn-secondary me-1 disabled-td" data-tag="{{ tag }}" style="cursor:default">{{ tag }}</button>
+                                        <input hidden name="tag_{{ user.crsid }}[]" value="{{ tag }}" />
                                         <button type="button" class="btn btn-danger btn-sm delete-tag me-2" data-crsid="{{ user.crsid }}" data-tag="{{ tag }}">X</button>
                                     </div>
                                 {% endfor %}
