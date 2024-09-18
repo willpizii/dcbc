@@ -525,10 +525,20 @@ def index():
     else:
         superuser = False
 
+    logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
+    workouts = session.execute(
+        select(Workout).where(Workout.user_id == logid).order_by(Workout.date.desc()).limit(5)
+    ).scalars().all()
+    workouts_dict = {index: workout for index, workout in enumerate(workouts)}
+
+    for workout in workouts_dict.values():
+        workout.split = format_seconds((workout.time / 10) / (workout.distance / 500))
+
+        workout.time = format_seconds(workout.time / 10)
+
     return(render_template(
         template_name_or_list='home.html',
-        club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'),
-        authorize = url_for('authorize'), captains = url_for('captains'), superuser=superuser, logbook=logbook))
+        workouts_dict = workouts_dict, superuser=superuser, logbook=logbook))
 
 @app.route(f'/authorize')
 def authorize():
@@ -869,16 +879,6 @@ def plot():
         to_date = datetime.strptime('2025-06-30', '%Y-%m-%d')
 
     df = df[(df['date'] >= from_date) & (df['date'] <= to_date)]
-
-    def format_seconds(seconds):
-        # Calculate minutes, seconds, and tenths of seconds
-        minutes = int(seconds // 60)
-        seconds_remainder = seconds % 60
-        seconds_int = int(seconds_remainder)
-        tenths = int((seconds_remainder - seconds_int) * 10)
-
-        # Format the result as "minutes:seconds.tenths"
-        return f"{minutes}:{seconds_int:02d}.{tenths}"
 
     df['split'] = df['split'].apply(format_seconds)
 
@@ -1381,17 +1381,6 @@ def pbs():
     df['distance'] = pd.to_numeric(df['distance'], errors='coerce')
 
     df['split'] = round((df['time'] / 10) / (df ['distance'] / 500),1)
-
-
-    def format_seconds(seconds):
-        # Calculate minutes, seconds, and tenths of seconds
-        minutes = int(seconds // 60)
-        seconds_remainder = seconds % 60
-        seconds_int = int(seconds_remainder)
-        tenths = int((seconds_remainder - seconds_int) * 10)
-
-        # Format the result as "minutes:seconds.tenths"
-        return f"{minutes}:{seconds_int:02d}.{tenths}"
 
     df['split'] = df['split'].apply(format_seconds)
 
@@ -2056,10 +2045,44 @@ def edit_boat():
 
         id_layout = {}
 
+        given_boat = request.form.get('boat_name')
+
+        # Remove all instances of the boat passed from user boats field
+        for user, user_boats in {str(user.crsid): (user.boats.split(',') if user.boats else [])
+                                 for user in session.execute(select(User)).scalars().all()}.items():
+            if given_boat in user_boats:
+                user_boats.remove(given_boat)
+
+                merge_boats = {
+                                'crsid': user,
+                                'boats': ','.join(user_boats) if user_boats is not [] else None
+                                }
+                merged_boats = User(**merge_boats)
+                session.merge(merged_boats)
+
+        session.commit()
+
+        # Add the boat name back into the passed users
         for position in max_positions:
             if f'side-{position}' in request.form:
                 _side_ = request.form.get(f'side-{position}')
                 id_layout.update({position: _side_})
+
+            if f'seat-{position}' in request.form:
+                seat_crsid = request.form.get(f'seat-{position}')
+                exist_boats = session.execute(select(User.boats).where(User.crsid == seat_crsid)).scalar()
+
+                exist_boats = exist_boats.split(',') if exist_boats is not None else []
+
+                if given_boat not in exist_boats:
+                    exist_boats.append(given_boat)
+
+                    merge_boats = {
+                                    'crsid': seat_crsid,
+                                    'boats': ','.join(exist_boats)
+                                    }
+                    merged_boats = User(**merge_boats)
+                    session.merge(merged_boats)
 
         boat_info = {
                 'name': request.form.get('boat_name'),

@@ -2,19 +2,71 @@
 
 {% block content %}
 
-<div class="container-fluid py-4">
-    <div class="row">
-        <h1>
-            Welcome to the DCBC Erg Tracker!
-        </h1>
+<div class="container-fluid mt-4">
+    <div class="row  px-5 py-4">
+        <div class="col mx-2">
+            <div class="row border rounded mb-3 p-4">
+                <h1>
+                Welcome to the DCBC System!
+                </h1>
+            </div>
 
-        <p> Use the header buttons above to navigate the website </p>
+            <div class="row border rounded mb-3 p-4">
+                <h3>Last 5 Ergs</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width:25%">Date</th>
+                            <th style="width:25%">Distance</th>
+                            <th style="width:25%">Time</th>
+                            <th style="width:25%">Split</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for workout in workouts_dict.values() %}
+                            <tr>
+                                <td>{{ workout.date }}</td>
+                                <td>{{ workout.distance }}m</td>
+                                <td>{{ workout.time }}</td>
+                                <td>{{ workout.split }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <h3>Upcoming Ergs</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width:25%">Date</th>
+                            <th style="width:25%">Type</th>
+                            <th style="width:50%">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>2024-09-22</td>
+                            <td>AT</td>
+                            <td>Ian's Weekly AT</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="col mx-2">
+            <div class="row border rounded mb-3 p-4"
+                <span>Here, will go the boats</span>
+            </div>
 
-        {% if not logbook %}
-            <p><a href = "{{ authorize }}"> Add a Concept2 Logbook account</a> to keep track of your ergs! </p>
-        {% else %}
-            <p><a href = "{{ authorize }}"> Reload your Concept2 Logbook account</a> if something is broken </p>
-        {% endif %}
+            <div class="row border rounded mb-3 p-4"
+                <p>Use the header buttons above to navigate the website </p>
+
+                {% if not logbook %}
+                    <p><a href = "{{ authorize }}">Add a Concept2 Logbook account</a> to keep track of your ergs! </p>
+                {% else %}
+                    <p><a href = "{{ authorize }}">Reload your Concept2 Logbook account</a> if something is broken </p>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
