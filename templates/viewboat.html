@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+select.form-select option.disabled-option {
+    color: #6c757d; /* Greyed out color */
+}
+</style>
+
+<form action="" method="POST" id="boatForm">
+<div class="container py-4">
+    <h3 class="mb-4">View Boat</h3>
+    <div class="row mb-2">
+        <div class="col-md-3">
+            <input class="form-control" disabled value="{{ boats_list.name }}"></input>
+            <input hidden id="boat_name" name="boat_name" value="{{ boats_list.name }}"></input>
+        </div>
+        <div class="col-md-3">
+            <select id="boatType" class="form-select mb-3" onchange="filter()" name="boat_type" disabled>
+                <option value="eight">Eight</option>
+                <option value="coxed-four">Coxed Four / Quad</option>
+                <option value="coxless-four">Coxless Four / Quad</option>
+                <option value="pair">Pair / Double</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <input id="boat_name" class="form-control" name="boat_shell" value="{{ boats_list.shell }}" disabled></input>
+        </div>
+    </div>
+    <table class="table table-bordered table-hover table-striped">
+        <thead>
+            <tr>
+                <th scope="col" width="10%" style="min-width:80px;">Seat</th>
+                <th scope="col" width="10%" style="min-width:80px;">Side</th>
+                <th scope="col" width="60%" min-width="100px">Name</th>
+            </tr>
+        </thead>
+        <tbody id="userTableBody">
+            <!-- content populated by JS below -->
+        </tbody>
+    </table>
+</div>
+</form>
+
+<script>
+    window.boatsList = {{ boats_list | tojson }};
+    window.user_list = {{ user_list | tojson }};
+    window.selectedType = "{{ boats_list.crew_type | default('eight') }}";
+</script>
+<script src="{{ url_for('static', filename='js/viewboat.js') }}"></script>
+{% endblock %}

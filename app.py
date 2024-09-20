@@ -7,6 +7,7 @@ import hashlib
 import getpass
 import io
 import shutil
+import copy
 
 import numpy as np
 import pandas as pd
@@ -40,7 +41,7 @@ from cryptography.fernet import Fernet
 
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -49,6 +50,7 @@ from models.usersdb import User
 from models.boatsdb import Boat
 from models.dailydb import Daily
 from models.eventdb import Event
+from models.outings import Outing
 from models.base import Base
 
 class R(flask.Request):
@@ -526,18 +528,31 @@ def index():
         superuser = False
 
     logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
+    boats = session.execute(select(User.boats).where(User.crsid == crsid)).scalar().split(",")
+
+    your_boats = {}
+
+    boat_columns = inspect(Boat).columns.keys()
+    for boat in boats:
+        boat_row = session.execute(select(Boat).where(Boat.name == boat)).scalar()
+        if boat_row.active:
+            for column in boat_columns:
+                if getattr(boat_row, column) == crsid:
+                    your_boats.update({boat:column})
+                    break
+
+
     workouts = session.execute(
         select(Workout).where(Workout.user_id == logid).order_by(Workout.date.desc()).limit(5)
-    ).scalars().all()
-    workouts_dict = {index: workout for index, workout in enumerate(workouts)}
+        ).scalars().all()
+    workouts_dict = {index: copy.deepcopy(workout) for index, workout in enumerate(workouts)}
 
     for workout in workouts_dict.values():
         workout.split = format_seconds((workout.time / 10) / (workout.distance / 500))
-
         workout.time = format_seconds(workout.time / 10)
 
     return(render_template(
-        template_name_or_list='home.html',
+        template_name_or_list='home.html', boats=your_boats,
         workouts_dict = workouts_dict, superuser=superuser, logbook=logbook))
 
 @app.route(f'/authorize')
@@ -734,9 +749,6 @@ def load_all():
             filtered_workout_data["date"] = datetime.strptime(filtered_workout_data["date"], "%Y-%m-%d %H:%M:%S")
 
         existing_workout = session.query(Workout).filter_by(id=filtered_workout_data['id']).first()
-        if existing_workout:
-            print(f"Record with id {filtered_workout_data['id']} already exists. Skipping insertion.")
-            continue  # Skip this record
 
         # Create Workout object with the filtered data
         new_workout = Workout(**filtered_workout_data)
@@ -2020,6 +2032,15 @@ def set_boats():
 
     boats = session.execute(select(Boat)).scalars().all()
 
+    if request.method == 'POST' :
+        merge_boats = {
+                        'name': request.get_json().get('boat'),
+                        'active': request.get_json().get('status') == 'True'
+                        }
+        merged_boats = Boat(**merge_boats)
+        session.merge(merged_boats)
+        session.commit()
+
     boats_list = []
 
     for row in boats:
@@ -2145,6 +2166,39 @@ def edit_boat():
 def view_races():
     crsid = auth_decorator.principal
     return ("Not Implemented!")
+
+@app.route('/boat')
+def view_boat():
+    crsid = auth_decorator.principal
+    boat = request.args.get('name', None)
+
+    boats_list = {}
+
+    if 'name' in request.args:
+        boat_name = request.args.get('name')
+
+        if boat_name != 'new':
+            boats = session.execute(select(Boat).where(Boat.name == boat_name)).scalars().all()
+
+            for row in boats:
+                boats_list.update({
+                        'name': row.name,
+                        'cox': row.cox if row.cox else None,
+                        'stroke': row.stroke if row.stroke else None,
+                        'seven': row.seven if row.seven else None,
+                        'six': row.six if row.six else None,
+                        'five': row.five if row.five else None,
+                        'four': row.four if row.four else None,
+                        'three': row.three if row.three else None,
+                        'two': row.two if row.two else None,
+                        'bow': row.bow if row.bow else None,
+                        'crew_type': row.crew_type if row.crew_type else None,
+                        'shell': row.shell if row.shell else None,
+                     })
+
+    user_crsids = {str(user.crsid):str(user.preferred_name+' '+user.last_name) for user in session.execute(select(User)).scalars().all()}
+
+    return(render_template('viewboat.html', boats_list = boats_list, user_list = user_crsids)) # temp
 
 def superuser_check(crsid, superusers):
     if crsid in superusers:

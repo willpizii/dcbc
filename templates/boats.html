@@ -34,11 +34,11 @@
                         {% endfor %}
                     </td>
                     <td>
-                        <input type="radio" class="btn-check" name="{{boat.name}}-radio" id="{{boat.name}}-active" autocomplete="off" checked>
-                        <label class="btn btn-outline-success" for="{{boat.name}}-active">Active</label>
+                        <input type="radio" class="btn-check" name="{{ boat.name }}-radio" id="{{ boat.name }}-active" data-boat="{{ boat.name }}" data-status="True" autocomplete="off" {% if boat.active %}checked{% endif %}>
+                        <label class="btn btn-outline-success" for="{{ boat.name }}-active">Active</label>
 
-                        <input type="radio" class="btn-check" name="{{boat.name}}-radio" id="{{boat.name}}-inactive" autocomplete="off">
-                        <label class="btn btn-outline-danger" for="{{boat.name}}-inactive">Inactive</label>
+                        <input type="radio" class="btn-check" name="{{ boat.name }}-radio" id="{{ boat.name }}-inactive" data-boat="{{ boat.name }}" data-status="False" autocomplete="off"  {% if not boat.active %}checked{% endif %}>
+                        <label class="btn btn-outline-danger" for="{{ boat.name }}-inactive">Inactive</label>
                     </td>
                 </tr>
             {% endfor %}
@@ -71,6 +71,34 @@
         document.getElementById('tagSearch').addEventListener('input', filter);
 
         filter(); // Initial call to filter on page load
+
+    const radios = document.querySelectorAll('.btn-check');
+
+    radios.forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            const boatName = this.dataset.boat;
+            const status = this.dataset.status;
+
+            fetch(window.location.href, {  // Sending the request to the current URL
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    boat: boatName,
+                    status: status
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Success:', data);
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+            });
+        });
     });
+});
+</script>
 </script>
 {% endblock %}
