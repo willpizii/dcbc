@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+
+    .available {
+        background-color: #98FB98 !important; /* Light green for available */
+    }
+    .not-available {
+        background-color: #FF6F6F  !important; /* Light red for not available */
+    }
+    .if-required {
+        background-color: #FFFFE0  !important; /* Light yellow for if needs be */
+    }
+    .out-of-cam {
+        background-color: #772727  !important; /* Dark red for out of cambridge */
+        color: white !important;
+    }
+    .unfilled {
+        background-color: grey  !important; /* Dark red for out of cambridge */
+        color: white !important;
+    }
+
+</style>
+
+<div class="container-fluid mt-4">
+    <h3> Build an Outing </h3>
+    <div class="row px-5 py-2">
+        <div class="col mx-2">
+            <div class="row border rounded mb-3 p-4">
+                <select id="boatSelect" class="form-select" name="boat_id">
+                    <option value="">Select a Boat</option>
+                    {% for boat in boat_options %}
+                        <option value="{{ boat }}">{{ boat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
+                <h3> Set Time </h3>
+                <input type="date" class="form-control mb-2" id="dateInput" placeholder="Select Date"></input>
+                <input type="time" class="form-control" id="timeInput" placeholder="Select Time"></input>
+            </div>
+            <div class="row border rounded mb-3 p-4 availDiv" style="display: none;">
+
+            </div>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
+                <h3> Coach </h3>
+                <input type="text" class="form-control" id="coachInput" placeholder="Who is coaching?"></input>
+            </div>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
+                <h3> Shell </h3>
+                <input class="form-control" id="shellField" />
+            </div>
+        </div>
+
+        <div class="col mx-2">
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
+                <table id="boatInfoTable" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Position</th>
+                            <th>Rower</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="boatInfoBody">
+                        <!-- Rows will be dynamically added here -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="row border rounded mb-3 p-4" style="display: none;" id="subDetected">
+                <button class="btn btn-danger" id="submitButton" action="#">SUB DETECTED! </button>
+            </div>
+            <div id="replacementsContainer" class="row border rounded mb-3 p-4" style="display: none;"></div>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
+                <button class="btn btn-primary" id="submitButton" action="#">Save Outing </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/editouting.js') }}"> </script>
+
+
+
+
+
+
+{% endblock %}

@@ -10,5 +10,9 @@ class Outing(Base):
     date_time = Column(DateTime)
     boat_name = Column(String(255))
 
+    set_crew = Column(Text)
+
+    shell = Column(String(255))
+
     subs = Column(String(255))
     coach = Column(String(255))

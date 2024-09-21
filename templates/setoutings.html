@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container py-4">
+    <h3 class="mb-4">Outings Setter</h3>
+
+    <a type="button" class="btn btn-primary mb-3" href={{url_for('edit_outing', outing='new')}}>Add a New Outing</a>
+
+
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <input type="text" id="nameSearch" class="form-control" placeholder="Search by Row" oninput="filter()">
+        </div>
+    </div>
+
+    <div class="table-responsive">
+
+    <form method="POST" id="captainForm" action="/captains">
+
+    {% if outings %}
+        <table class="table table-bordered table-hover table-striped">
+            <thead class="table-dark">
+
+            </thead>
+            <tbody id="userTableBody">
+
+            </tbody>
+        </table>
+    {% else %}
+         No outings found from {{ from_date }} to {{ to_date }}
+    {% endif %}
+    </form>
+
+    </div>
+</div>
+
+
+{% endblock %}

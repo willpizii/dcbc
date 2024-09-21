@@ -11,19 +11,17 @@ import copy
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import pyotp
 import qrcode
 from io import BytesIO
 from datetime import datetime, time, timedelta
-import pyarrow as pa
 import calendar
 
 import requests
 from urllib.parse import urlencode
 
 import flask
-from flask import (Flask, redirect, Blueprint, request,
+from flask import (Flask, redirect, Blueprint, request, jsonify,
                    render_template_string, send_file, url_for,
                    make_response, render_template, send_from_directory)
 from flask import session as cookie_session
@@ -41,7 +39,7 @@ from cryptography.fernet import Fernet
 
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect, and_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -547,13 +545,62 @@ def index():
         ).scalars().all()
     workouts_dict = {index: copy.deepcopy(workout) for index, workout in enumerate(workouts)}
 
+    best2k = session.execute(select(
+        select(
+            Workout.user_id,
+            Workout.distance,
+            Workout.time,
+            Workout.workout_type,
+            Workout.date
+        )
+        .where(
+            Workout.user_id == logid,
+            Workout.distance == 2000,
+            Workout.workout_type == "FixedDistanceSplits"
+        )
+        .order_by(Workout.time.asc())
+        .limit(1)
+        .subquery()
+    )).first()
+
+    best5k = session.execute(select(
+        select(
+            Workout.user_id,
+            Workout.distance,
+            Workout.time,
+            Workout.workout_type,
+            Workout.date
+        )
+        .where(
+            Workout.user_id == logid,
+            Workout.distance == 5000,
+            Workout.workout_type == "FixedDistanceSplits"
+        )
+        .order_by(Workout.time.asc())
+        .limit(1)
+        .subquery()
+    )).first()
+
+    best2k_copy = {key: value for key, value in best2k._mapping.items()}.copy() if best2k else None
+
+    best5k_copy = {key: value for key, value in best5k._mapping.items()}.copy() if best5k else None
+
+    if best2k_copy:
+        best2k_copy['time'] = format_seconds(best2k_copy['time'] / 10)
+        best2k_copy['date'] = best2k_copy['date'].date()
+
+    if best5k_copy:
+        best5k_copy['time'] = format_seconds(best5k_copy['time'] / 10)
+        best5k_copy['date'] = best5k_copy['date'].date()
+
     for workout in workouts_dict.values():
         workout.split = format_seconds((workout.time / 10) / (workout.distance / 500))
         workout.time = format_seconds(workout.time / 10)
 
     return(render_template(
         template_name_or_list='home.html', boats=your_boats,
-        workouts_dict = workouts_dict, superuser=superuser, logbook=logbook))
+        workouts_dict = workouts_dict, superuser=superuser, logbook=logbook,
+        pb2k = best2k_copy, pb5k = best5k_copy))
 
 @app.route(f'/authorize')
 def authorize():
@@ -2199,6 +2246,129 @@ def view_boat():
     user_crsids = {str(user.crsid):str(user.preferred_name+' '+user.last_name) for user in session.execute(select(User)).scalars().all()}
 
     return(render_template('viewboat.html', boats_list = boats_list, user_list = user_crsids)) # temp
+
+@app.route('/captains/outings')
+def set_outings():
+    crsid = auth_decorator.principal
+
+    if crsid not in superusers:
+        return redirect(url_for('forbidden', ref='captains'))
+
+    if 'from' not in request.args:
+        from_date = datetime.today().date()
+    else:
+        from_date = request.args.get('from')
+
+    if 'to' not in request.args:
+        to_date = datetime.today().date() + timedelta(days=7)
+    else:
+        to_date = request.args.get('to')
+
+    next_outings = session.execute(
+            select(Outing).where(
+                    and_(
+                            Outing.date_time >= from_date,
+                            Outing.date_time < to_date
+                        )
+                )
+        ).scalars().all()
+
+    print(next_outings)
+
+    return render_template('setoutings.html', outings = next_outings, from_date = from_date, to_date = to_date)
+
+@app.route('/captains/outings/edit', methods=['GET', 'POST'])
+def edit_outing():
+    crsid = auth_decorator.principal
+
+    if crsid not in superusers:
+        return redirect(url_for('forbidden', ref='captains'))
+
+    args = request.args
+
+    if 'outing' not in args or args.get('outing') is None:
+        return redirect(url_for("edit_outing", outing="new"))
+
+    if request.method == 'POST':
+        # Handle POST request for editing or creating an outing
+        outing_data = request.json  # Assuming you're sending JSON data
+
+        # Here you would process the incoming data, e.g., save to database
+        # Example:
+        # outing = Outing(boat_id=outing_data['boat_id'], ...)
+        # session.add(outing)
+        # session.commit()
+
+        return jsonify({'success': True, 'message': 'Outing saved!'}), 201
+
+    if args.get('outing') == 'new':
+        boat_options = [row[0] for row in session.execute(
+            select(Boat.name).where(Boat.active == True)).fetchall()]
+
+        return render_template('editouting.html', boat_options=boat_options)
+
+    # Handle case where outing is being edited
+    outing_id = args.get('outing')
+    outing = session.execute(select(Outing).where(id=outing_id)).first()
+
+    if outing:
+        boat_options = [row[0] for row in session.execute(
+            select(Boat.name).where(Boat.active == True)).fetchall()]
+
+        return render_template('editouting.html', boat_options=boat_options, outing=outing)
+
+    return "Outing not found", 404
+
+@app.route('/get_boat_info', methods=['POST'])
+def get_boat_info():
+    data = request.json
+    boat_name = data.get('boat_name')
+
+    boat = session.query(Boat).filter_by(name=boat_name).first()
+    if boat:
+        response_data = {
+            'shell': boat.shell if boat.shell else None}
+
+        user_crsids = {str(user.crsid): str(user.preferred_name + ' ' + user.last_name) for user in session.execute(select(User)).scalars().all()}
+
+        # Add rowers to the response data using the user_crsids dictionary
+        rower_positions = ['cox', 'stroke', 'seven', 'six', 'five', 'four', 'three', 'two', 'bow']
+
+        for position in rower_positions:
+            crsid = getattr(boat, position)
+            response_data[position] = {
+                'crsid': crsid,
+                'name': user_crsids.get(crsid, None)
+            } if crsid else None
+        return jsonify(response_data)
+    else:
+        return jsonify({'error': 'Boat not found'}), 404
+
+@app.route('/check_availability', methods=['POST'])
+def check_availability():
+    data = request.get_json()
+    selected_date = data.get('date', '')
+
+    if not selected_date:  # Check if the date is empty
+        return jsonify({'error': 'Invalid date'}), 400  # Return an error response
+
+
+    result = session.execute(select(Daily).where(Daily.date == selected_date)).first()
+
+    if result:
+        daily_record = result[0]  # Extract the Daily object from the result
+        response_data = {
+            'date': daily_record.date,
+            'user_data': daily_record.user_data,  # Example field
+            # Add other relevant fields
+        }
+        return jsonify(response_data)  # Print the resulting row to the console
+    else:
+        return jsonify({'error': 'No availability found for this date'}), 404
+
+@app.route('/captains/availability/view')
+def view_availability():
+    return("NOT IMPLEMENTED!")
 
 def superuser_check(crsid, superusers):
     if crsid in superusers:

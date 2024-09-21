@@ -10,7 +10,41 @@
                 Welcome to the DCBC System!
                 </h1>
             </div>
+            <div class="row border rounded mb-3 p-4">
+                <h3>Your Boats</h3>
+                {% if boats %}
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Boat</th>
+                                <th>Seat</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for boatkey, boatvalue in boats.items() %}
+                                <tr>
+                                    <td><a href="{{ url_for("view_boat", name=boatkey) }}">{{ boatkey }}</a></td>
+                                    <td>{{ boatvalue }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p> You aren't a member of any boats yet! </p>
+                {% endif %}
+            </div>
 
+            <div class="row border rounded mb-3 p-4"
+                <p>Use the header buttons above to navigate the website </p>
+
+                {% if not logbook %}
+                    <p><a href = "{{ url_for('authorize') }}">Add a Concept2 Logbook account</a> to keep track of your ergs! </p>
+                {% else %}
+                    <p><a href = "{{ url_for('authorize') }}">Reload your Concept2 Logbook account</a> if something is broken </p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col mx-2">
             <div class="row border rounded mb-3 p-4">
                 <h3>Last 5 Ergs</h3>
                 <table class="table">
@@ -51,41 +85,33 @@
                     </tbody>
                 </table>
             </div>
-        </div>
-        <div class="col mx-2">
-            <div class="row border rounded mb-3 p-4">
-                <h3>Your Boats</h3>
-                {% if boats %}
+            {% if pb2k or pb5k %}
+                <div class="row border rounded mb-3 p-4">
+                    <h3>PBs</h3>
                     <table class="table">
                         <thead>
                             <tr>
-                                <th>Boat</th>
-                                <th>Seat</th>
+                                <th style="width:50%">2K PB</th>
+                                <th style="width:50%">5K PB</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for boatkey, boatvalue in boats.items() %}
-                                <tr>
-                                    <td><a href="{{ url_for("view_boat", name=boatkey) }}">{{ boatkey }}</a></td>
-                                    <td>{{ boatvalue }}</td>
-                                </tr>
-                            {% endfor %}
+                            <tr>
+                                {% if pb2k %}
+                                    <td>{{ pb2k.time }} on {{ pb2k.date }}</td>
+                                {% else %}
+                                    <td> No verified 2k </td>
+                                {% endif %}
+
+                                {% if pb5k %}
+                                    <td>{{ pb5k.time }} on {{ pb5k.date }}</td>
+                                {% else %}
+                                    <td> No verified 2k </td>
+                                {% endif %}
                         </tbody>
                     </table>
-                {% else %}
-                    <p> You aren't a member of any boats yet! </p>
-                {% endif %}
-            </div>
-
-            <div class="row border rounded mb-3 p-4"
-                <p>Use the header buttons above to navigate the website </p>
-
-                {% if not logbook %}
-                    <p><a href = "{{ url_for('authorize') }}">Add a Concept2 Logbook account</a> to keep track of your ergs! </p>
-                {% else %}
-                    <p><a href = "{{ url_for('authorize') }}">Reload your Concept2 Logbook account</a> if something is broken </p>
-                {% endif %}
-            </div>
+                </div>
+            {% endif %}
         </div>
     </div>
 </div>

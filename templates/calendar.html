@@ -147,6 +147,6 @@
     window.eventDays = {{ event_days|tojson|default('{}')|safe }};
 </script>
 
-<script src="../static/js/calendar.js"></script>
+<script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
 
 {% endblock %}
