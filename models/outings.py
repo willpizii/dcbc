@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Text, Boolean, DateTime
+from sqlalchemy import Column, String, Text, Boolean, DateTime, JSON
 from models.base import Base  # Import the shared Base
 
 # Define the table structure with only the required columns
@@ -10,7 +10,7 @@ class Outing(Base):
     date_time = Column(DateTime)
     boat_name = Column(String(255))
 
-    set_crew = Column(Text)
+    set_crew = Column(JSON)
 
     shell = Column(String(255))
 

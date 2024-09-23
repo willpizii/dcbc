@@ -24,12 +24,13 @@
 
 </style>
 
+<form method="POST" id="submitOuting" action="/captains/outings/edit">
 <div class="container-fluid mt-4">
     <h3> Build an Outing </h3>
     <div class="row px-5 py-2">
         <div class="col mx-2">
             <div class="row border rounded mb-3 p-4">
-                <select id="boatSelect" class="form-select" name="boat_id">
+                <select id="boatSelect" class="form-select" name="boat_id" required>
                     <option value="">Select a Boat</option>
                     {% for boat in boat_options %}
                         <option value="{{ boat }}">{{ boat }}</option>
@@ -38,19 +39,17 @@
             </div>
             <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
                 <h3> Set Time </h3>
-                <input type="date" class="form-control mb-2" id="dateInput" placeholder="Select Date"></input>
-                <input type="time" class="form-control" id="timeInput" placeholder="Select Time"></input>
+                <input type="date" class="form-control mb-2" id="dateInput" placeholder="Select Date" name="date" required></input>
+                <input type="time" class="form-control" id="timeInput" placeholder="Select Time" name="time" required></input>
             </div>
-            <div class="row border rounded mb-3 p-4 availDiv" style="display: none;">
-
-            </div>
+            <div class="row border rounded mb-3 p-4 availDiv" style="display: none;"></div>
             <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
                 <h3> Coach </h3>
-                <input type="text" class="form-control" id="coachInput" placeholder="Who is coaching?"></input>
+                <input type="text" class="form-control" id="coachInput" placeholder="Who is coaching?" name="coach"></input>
             </div>
             <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
                 <h3> Shell </h3>
-                <input class="form-control" id="shellField" />
+                <input class="form-control" id="shellField" name="shell" required/>
             </div>
         </div>
 
@@ -69,16 +68,15 @@
                     </tbody>
                 </table>
             </div>
-            <div class="row border rounded mb-3 p-4" style="display: none;" id="subDetected">
-                <button class="btn btn-danger" id="submitButton" action="#">SUB DETECTED! </button>
-            </div>
             <div id="replacementsContainer" class="row border rounded mb-3 p-4" style="display: none;"></div>
+            <div class="row border rounded mb-3 p-4 subAvailDiv" style="display: none;"></div>
             <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
-                <button class="btn btn-primary" id="submitButton" action="#">Save Outing </button>
+                <button class="btn btn-primary" id="submitButton" action="submit">Save Outing </button>
             </div>
         </div>
     </div>
 </div>
+</form>
 
 <script src="{{ url_for('static', filename='js/editouting.js') }}"> </script>
 

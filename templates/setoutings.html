@@ -20,11 +20,23 @@
 
     {% if outings %}
         <table class="table table-bordered table-hover table-striped">
-            <thead class="table-dark">
-
+            <thead class="table">
+                <th>Date</th>
+                <th>Time</th>
+                <th>Crew</th>
+                <th>Shell</th>
+                <th>Coach</th>
             </thead>
             <tbody id="userTableBody">
-
+                {% for outing in outings %}
+                    <tr id="{{ outing.outing_id }}">
+                        <td>{{ outing.date_time.strftime('%Y-%m-%d') }}</td>
+                        <td>{{ outing.date_time.strftime('%H:%M') }}</td>
+                        <td>{{ outing.boat_name }}</td>
+                        <td>{{ outing.shell }}</td>
+                        <td>{{ outing.coach }}</td>
+                    </tr>
+                {% endfor %}
             </tbody>
         </table>
     {% else %}

@@ -39,7 +39,7 @@ from cryptography.fernet import Fernet
 
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect, and_
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect, and_, or_, not_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -56,6 +56,10 @@ class R(flask.Request):
 
 app = Flask(__name__)
 app.request_class = R
+
+# Comment these for live deployment
+dev_bp = Blueprint('dev', __name__, url_prefix='/dev')
+app.register_blueprint(dev_bp)
 
 app.config['SERVER_NAME'] = 'wp280.user.srcf.net'
 app.config['SESSION_COOKIE_NAME'] = 'cookie_session'
@@ -528,7 +532,7 @@ def index():
     logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
     boats = session.execute(select(User.boats).where(User.crsid == crsid)).scalar().split(",")
 
-    your_boats = {}
+    your_boats = {} # Stores seat information for the boats you are a member of
 
     boat_columns = inspect(Boat).columns.keys()
     for boat in boats:
@@ -539,6 +543,29 @@ def index():
                     your_boats.update({boat:column})
                     break
 
+    today = datetime.now()
+    next_week = today + timedelta(days=7)
+
+    your_outings = session.execute(
+        select(Outing).where(
+            and_(
+                Outing.date_time >= today.date(),  # Include events from today onwards
+                Outing.date_time <= next_week,      # Up to one week from today
+                or_(
+                    Outing.boat_name.in_(boats),
+                    func.find_in_set(crsid, Outing.subs)
+                )
+            )
+        )
+    ).scalars().all()
+
+    your_outings = [
+        outing for outing in your_outings
+        if outing.set_crew is None or crsid not in json.loads(outing.set_crew)  # Check for None and key presence
+    ]
+
+    for outing in your_outings:
+        print(outing.boat_name, outing.set_crew ,outing.date_time, outing.subs)
 
     workouts = session.execute(
         select(Workout).where(Workout.user_id == logid).order_by(Workout.date.desc()).limit(5)
@@ -598,7 +625,7 @@ def index():
         workout.time = format_seconds(workout.time / 10)
 
     return(render_template(
-        template_name_or_list='home.html', boats=your_boats,
+        template_name_or_list='home.html', boats=your_boats, outings=your_outings,
         workouts_dict = workouts_dict, superuser=superuser, logbook=logbook,
         pb2k = best2k_copy, pb5k = best5k_copy))
 
@@ -2284,14 +2311,55 @@ def edit_outing():
     if crsid not in superusers:
         return redirect(url_for('forbidden', ref='captains'))
 
-    args = request.args
-
-    if 'outing' not in args or args.get('outing') is None:
-        return redirect(url_for("edit_outing", outing="new"))
-
     if request.method == 'POST':
         # Handle POST request for editing or creating an outing
-        outing_data = request.json  # Assuming you're sending JSON data
+        outing_data = request.form  # Assuming you're sending JSON data
+
+        print(outing_data)
+
+        new_outing = {
+                'date_time': datetime.strptime(f"{outing_data.get('date')} {outing_data.get('time')}", "%Y-%m-%d %H:%M"),
+                'boat_name': outing_data.get('boat_id'),
+                'set_crew': {}, # Used to populate the crew list, for non-user subs
+                'shell': outing_data.get('shell'),
+                'subs': [], # Used to put into outings for the subs
+                'coach': outing_data.get('coach')
+            }
+
+        # Iterate over the form data to process 'sub-' entries
+        for key, value in outing_data.items():
+            if key.startswith('sub-'):
+                # Extract the parts after the hyphens
+                parts = key.split('-')
+                usr_key = parts[1] if len(parts) > 1 else None
+                sub_key = parts[2] if len(parts) > 2 else None
+
+                # Populate the set_crew dictionary
+                if usr_key:
+                    new_outing['set_crew'][usr_key] = value
+
+                # Add sub_key to subs list if it's not empty
+                if sub_key:
+                    new_outing['subs'].append(sub_key)
+
+        # Convert subs list to a comma-separated string if there are any subs
+        if new_outing['subs']:
+            new_outing['subs'] = ','.join(new_outing['subs'])
+        else:
+            new_outing['subs'] = None  # Ensure subs is None if empty
+
+        if new_outing['set_crew']:
+            new_outing['set_crew'] = json.dumps(new_outing['set_crew'])
+        else:
+            new_outing['set_crew'] = None  # Ensure set_crew is None if empty
+
+
+        add_outing = Outing(**new_outing)
+
+        session.merge(add_outing)
+        session.commit()
+
+        print(new_outing)
 
         # Here you would process the incoming data, e.g., save to database
         # Example:
@@ -2299,7 +2367,12 @@ def edit_outing():
         # session.add(outing)
         # session.commit()
 
-        return jsonify({'success': True, 'message': 'Outing saved!'}), 201
+        return ("Success!"), 201
+
+    args = request.args
+
+    if 'outing' not in args or args.get('outing') is None:
+        return redirect(url_for("edit_outing", outing="new"))
 
     if args.get('outing') == 'new':
         boat_options = [row[0] for row in session.execute(
@@ -2366,8 +2439,36 @@ def check_availability():
     else:
         return jsonify({'error': 'No availability found for this date'}), 404
 
+@app.route('/find_crsid', methods=['POST'])
+def find_crsid():
+    data = request.get_json()
+    full_name = data.get('name', '')
+
+    # Split the full name into first and last names
+    names = full_name.split()
+    if len(names) < 2:
+        return jsonify({'error': 'Please provide both first and last names.'}), 400
+
+    first_name = names[0]
+    last_name = ' '.join(names[1:])  # In case there are middle names
+
+    # Implement your logic to find the CRSID based on the full name
+    user = session.query(User).filter(
+        User.preferred_name == first_name,
+        User.last_name == last_name
+    ).first()
+
+    if user:
+        return jsonify({'crsid': user.crsid})
+    else:
+        return jsonify({'error': 'CRSID not found'}), 404
+
 @app.route('/captains/availability/view')
 def view_availability():
+    return("NOT IMPLEMENTED!")
+
+@app.route('/outing')
+def view_outing():
     return("NOT IMPLEMENTED!")
 
 def superuser_check(crsid, superusers):
