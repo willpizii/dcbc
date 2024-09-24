@@ -69,27 +69,29 @@
         </div>
         <div class="col mx-2">
             <div class="row border rounded mb-3 p-4">
-                <h3>Last 5 Ergs</h3>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th style="width:25%">Date</th>
-                            <th style="width:25%">Distance</th>
-                            <th style="width:25%">Time</th>
-                            <th style="width:25%">Split</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for workout in workouts_dict.values() %}
+                {% if logbook %}
+                    <h3>Last 5 Ergs</h3>
+                    <table class="table">
+                        <thead>
                             <tr>
-                                <td>{{ workout.date }}</td>
-                                <td>{{ workout.distance }}m</td>
-                                <td>{{ workout.time }}</td>
-                                <td>{{ workout.split }}</td>
+                                <th style="width:25%">Date</th>
+                                <th style="width:25%">Distance</th>
+                                <th style="width:25%">Time</th>
+                                <th style="width:25%">Split</th>
                             </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {% for workout in workouts_dict.values() %}
+                                <tr>
+                                    <td>{{ workout.date }}</td>
+                                    <td>{{ workout.distance }}m</td>
+                                    <td>{{ workout.time }}</td>
+                                    <td>{{ workout.split }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% endif %}
                 <h3>Upcoming Ergs</h3>
                 <table class="table">
                     <thead>

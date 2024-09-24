@@ -45,7 +45,8 @@ function populateCalendar() {
             } else {
                 // Construct the full YYYYMMDD date string
                 let fullDate = `${year}${String(selectedMonth).padStart(2, '0')}${String(dayCounter).padStart(2, '0')}`;
-                row += `<td data-date="${fullDate}">${dayCounter}</td>`;
+                const noteValue = userNotes[fullDate] || "";
+                row += `<td data-date="${fullDate}">${dayCounter}<input class='form-control note-input' input-date="${fullDate}" name="input-${fullDate}" value="${noteValue}" type="hidden" /></td>`;
                 dayCounter++;
             }
         }
@@ -202,17 +203,27 @@ document.addEventListener('DOMContentLoaded', function () {
     form.addEventListener('submit', function (event) {
         event.preventDefault(); // Prevent the default form submission
         const times = [];
+        const notes = {};
 
         markedCells.forEach((state, date) => {
             if (state) {
                 times.push(`${date}|${state}`);
+
+                const noteInput = document.querySelector(`input[name="input-${date}"]`);
+                if (noteInput) {
+                    const noteValue = noteInput.value.trim(); // Trim whitespace from the input value
+                    if (noteValue) { // Check if the note is not empty
+                        notes[date] = noteValue; // Store note if it is not empty
+                    }
+                }
             }
         });
 
         const data = {
             name: form.name.value,
             month: currentMonth,
-            times: times
+            times: times,
+            notes: notes
         };
 
         console.log("Submitting data:", JSON.stringify(data)); // Debugging: Log the data being sent
@@ -272,4 +283,23 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     }
+    document.getElementById('showNotes').addEventListener('click', function(event) {
+        event.preventDefault();
+        // Select all note input elements
+        const hiddenInputs = document.querySelectorAll('input.note-input');
+
+        // Check if there are any hidden inputs
+        if (hiddenInputs.length === 0) {
+            console.log("No note inputs available.");
+            return; // Exit the function if no inputs are found
+        }
+
+        // Check if the first hidden input is currently hidden
+        const isVisible = hiddenInputs[0].type === 'text';
+
+        // Toggle the input type between 'hidden' and 'text'
+        hiddenInputs.forEach(function(input) {
+            input.type = isVisible ? 'hidden' : 'text';  // Change the input type accordingly
+        });
+    });
 });

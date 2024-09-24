@@ -91,17 +91,27 @@
             <button id="markOutOfCam">Mark as Out of Cambridge</button>
         </div>
         <form method="POST" id="availabilityForm" action="/submit_availability">
-            <label for="name">Your Name:</label>
-            <input type="text" id="name" name="name" hidden value="{{ crsid }}">
-            <input type="text" style="cursor: not-allowed;" disabled value="{{ username }}"><br><br>
-
-            <select id="monthSelector" name="month" class="form-select mb-3" value={{ month }}>
-                {% for month_value, month_name in months %}
-                    <option value="{{ month_value }}" {% if month_value == month %}selected{% endif %}>
-                        {{ month_name }} 2024
-                    </option>
-                {% endfor %}
-            </select>
+            <div class="row g-2 mb-2">
+                <div class="col-auto">
+                    <label for="name" class="col-form-label">Your Name:</label>
+                </div>
+                <div class="col-auto">
+                    <input type="text" id="name" name="name" hidden value="{{ crsid }}">
+                    <input type="text" style="cursor: not-allowed;" class="form-control" disabled value="{{ username }}">
+                </div>
+                <div class="col-auto">
+                    <button id="showNotes" class="btn btn-secondary">Show and Add Notes</button>
+                </div>
+                <div class="col-auto">
+                    <select id="monthSelector" name="month" class="form-select" value={{ month }}>
+                        {% for month_value, month_name in months %}
+                            <option value="{{ month_value }}" {% if month_value == month %}selected{% endif %}>
+                                {{ month_name }} 2024
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
 
             <label>Select Times:</label><br>
             <div>
@@ -145,6 +155,7 @@
     window.existingData = {{ existingData|tojson|default('{}')|safe }};
     window.raceDays = {{ race_days|tojson|default('{}')|safe }};
     window.eventDays = {{ event_days|tojson|default('{}')|safe }};
+    window.userNotes = {{ user_notes|tojson|default('{}')|safe }}
 </script>
 
 <script src="{{ url_for('static', filename='js/calendar.js') }}"></script>

@@ -529,19 +529,22 @@ def index():
     else:
         superuser = False
 
-    logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
-    boats = session.execute(select(User.boats).where(User.crsid == crsid)).scalar().split(",")
+    result = session.execute(select(User.boats).where(User.crsid == crsid)).scalar()
+
+    # Safely handle the case where the result is None
+    boats = result.split(",") if result else []
 
     your_boats = {} # Stores seat information for the boats you are a member of
 
-    boat_columns = inspect(Boat).columns.keys()
-    for boat in boats:
-        boat_row = session.execute(select(Boat).where(Boat.name == boat)).scalar()
-        if boat_row.active:
-            for column in boat_columns:
-                if getattr(boat_row, column) == crsid:
-                    your_boats.update({boat:column})
-                    break
+    if boats:
+        boat_columns = inspect(Boat).columns.keys()
+        for boat in boats:
+            boat_row = session.execute(select(Boat).where(Boat.name == boat)).scalar()
+            if boat_row.active:
+                for column in boat_columns:
+                    if getattr(boat_row, column) == crsid:
+                        your_boats.update({boat:column})
+                        break
 
     today = datetime.now()
     next_week = today + timedelta(days=7)
@@ -567,62 +570,70 @@ def index():
     for outing in your_outings:
         print(outing.boat_name, outing.set_crew ,outing.date_time, outing.subs)
 
-    workouts = session.execute(
-        select(Workout).where(Workout.user_id == logid).order_by(Workout.date.desc()).limit(5)
-        ).scalars().all()
-    workouts_dict = {index: copy.deepcopy(workout) for index, workout in enumerate(workouts)}
+    if logbook:
+        logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
+        workouts = session.execute(
+            select(Workout).where(Workout.user_id == logid).order_by(Workout.date.desc()).limit(5)
+            ).scalars().all()
+        workouts_dict = {index: copy.deepcopy(workout) for index, workout in enumerate(workouts)}
 
-    best2k = session.execute(select(
-        select(
-            Workout.user_id,
-            Workout.distance,
-            Workout.time,
-            Workout.workout_type,
-            Workout.date
-        )
-        .where(
-            Workout.user_id == logid,
-            Workout.distance == 2000,
-            Workout.workout_type == "FixedDistanceSplits"
-        )
-        .order_by(Workout.time.asc())
-        .limit(1)
-        .subquery()
-    )).first()
+        best2k = session.execute(select(
+            select(
+                Workout.user_id,
+                Workout.distance,
+                Workout.time,
+                Workout.workout_type,
+                Workout.date
+            )
+            .where(
+                Workout.user_id == logid,
+                Workout.distance == 2000,
+                Workout.workout_type == "FixedDistanceSplits"
+            )
+            .order_by(Workout.time.asc())
+            .limit(1)
+            .subquery()
+        )).first()
 
-    best5k = session.execute(select(
-        select(
-            Workout.user_id,
-            Workout.distance,
-            Workout.time,
-            Workout.workout_type,
-            Workout.date
-        )
-        .where(
-            Workout.user_id == logid,
-            Workout.distance == 5000,
-            Workout.workout_type == "FixedDistanceSplits"
-        )
-        .order_by(Workout.time.asc())
-        .limit(1)
-        .subquery()
-    )).first()
+        best5k = session.execute(select(
+            select(
+                Workout.user_id,
+                Workout.distance,
+                Workout.time,
+                Workout.workout_type,
+                Workout.date
+            )
+            .where(
+                Workout.user_id == logid,
+                Workout.distance == 5000,
+                Workout.workout_type == "FixedDistanceSplits"
+            )
+            .order_by(Workout.time.asc())
+            .limit(1)
+            .subquery()
+        )).first()
 
-    best2k_copy = {key: value for key, value in best2k._mapping.items()}.copy() if best2k else None
+        best2k_copy = {key: value for key, value in best2k._mapping.items()}.copy() if best2k else None
 
-    best5k_copy = {key: value for key, value in best5k._mapping.items()}.copy() if best5k else None
+        best5k_copy = {key: value for key, value in best5k._mapping.items()}.copy() if best5k else None
 
-    if best2k_copy:
-        best2k_copy['time'] = format_seconds(best2k_copy['time'] / 10)
-        best2k_copy['date'] = best2k_copy['date'].date()
+        if best2k_copy:
+            best2k_copy['time'] = format_seconds(best2k_copy['time'] / 10)
+            best2k_copy['date'] = best2k_copy['date'].date()
 
-    if best5k_copy:
-        best5k_copy['time'] = format_seconds(best5k_copy['time'] / 10)
-        best5k_copy['date'] = best5k_copy['date'].date()
+        if best5k_copy:
+            best5k_copy['time'] = format_seconds(best5k_copy['time'] / 10)
+            best5k_copy['date'] = best5k_copy['date'].date()
 
-    for workout in workouts_dict.values():
-        workout.split = format_seconds((workout.time / 10) / (workout.distance / 500))
-        workout.time = format_seconds(workout.time / 10)
+        for workout in workouts_dict.values():
+            workout.split = format_seconds((workout.time / 10) / (workout.distance / 500))
+            workout.time = format_seconds(workout.time / 10)
+
+    else:
+        workouts_dict = {}
+        best2k_copy = {}
+        best5k_copy = {}
+
 
     return(render_template(
         template_name_or_list='home.html', boats=your_boats, outings=your_outings,
@@ -1869,6 +1880,7 @@ def set_availabilities():
         state_dates = {}
         race_dates = {}
         event_dates = {}
+        notes = {}
 
         # Process each row
         for row in rows:
@@ -1886,7 +1898,10 @@ def set_availabilities():
 
             # Check if the crsid is in user_data
             if crsid in user_data:
-                state = user_data[crsid]
+                state = user_data[crsid]['state']
+                note = user_data[crsid]['notes']
+
+                notes[date_str] = note
 
                 # Initialize list for state if not already present
                 if state not in state_dates:
@@ -1895,9 +1910,9 @@ def set_availabilities():
                 # Add the date to the list for the specific state
                 state_dates[state].append(date_str)
 
-        return state_dates, race_dates, event_dates
+        return state_dates, race_dates, event_dates, notes
 
-    existingData, raceDays, eventDays = load_user_data(crsid)
+    existingData, raceDays, eventDays, userNotes = load_user_data(crsid)
 
     context = {
         'existingData': existingData,
@@ -1907,7 +1922,8 @@ def set_availabilities():
         'existing': True,
         'superuser': superuser,
         'race_days': raceDays,
-        'event_days': eventDays
+        'event_days': eventDays,
+        'user_notes': userNotes
     }
 
     now = datetime.now()
@@ -1944,6 +1960,7 @@ def submit_availability():
     data = request.get_json()
     times = data.get('times', [])
     month = data.get('month')
+    notes = data.get('notes', {})
 
     for time_entry in times:
         try:
@@ -1960,13 +1977,18 @@ def submit_availability():
                     user_data = {}
 
                 # Update the user_data for the specific crsid
-                user_data[crsid] = state
+                if crsid not in user_data:
+                    user_data[crsid] = {'state': state, 'notes': notes.get(time, None)}
+                else:
+                    # Update the 'state' field
+                    user_data[crsid]['state'] = state
+                    user_data[crsid]['notes'] = notes.get(time, None)
 
                 row.user_data = json.dumps(user_data)
                 session.merge(row)
 
             else:
-                new_row = Daily(date=date, user_data=json.dumps({crsid: state}))
+                new_row = Daily(date=date, user_data=json.dumps({crsid: {'state': state, 'notes': notes.get(time, None)}}))
                 session.add(new_row)
 
         except ValueError as e:

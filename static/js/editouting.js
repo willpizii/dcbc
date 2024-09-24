@@ -245,8 +245,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     nameCell.textContent = crsidToNameMap[crsid] || '';  // Get name from the map or leave blank
 
                     const availCell = document.createElement('td');
-                    availCell.style.width = '30%';  // Set width of the availability cell availability from userData if it exists
-                    availCell.className = userData[crsid] || 'unfilled';
+                    availCell.style.width = '30%';  // Set width of the availability cell
+
+                    const crsidData = userData[crsid]; // Get the data for the CRsid
+                    if (crsidData && crsidData.hasOwnProperty('state')) {
+                        availCell.className = crsidData['state']; // Set the className to crsidData['state']
+                    } else {
+                        availCell.className = 'unfilled'; // Default to 'unfilled' if no state is found
+                    }
+
+                    if (crsidData && crsidData.hasOwnProperty('notes')) {
+                        availCell.textContent = crsidData['notes']; // Set the className to crsidData['state']
+                    }
 
                     row.appendChild(nameCell);
                     row.appendChild(availCell);
@@ -304,8 +314,9 @@ document.addEventListener('DOMContentLoaded', function() {
             availableCrsids.forEach(crsid => {
                 const inputField = document.querySelector(`input[id="sub-${crsid}"]`);
                 if (inputField) {
-                    const availability = userData[crsid] || 'unfilled'; // Default to unfilled if not found
-                    inputField.className = `form-control ${availability}` // Change the class of the input based on availability
+                    const crsidData = userData[crsid]; // Get the data for the CRsid
+                    const availability = crsidData ? (crsidData['state'] || 'unfilled') : 'unfilled'; // Check if crsidData exists
+                    inputField.className = `form-control ${availability}`; // Change the class of the input based on availability
                 }
             });
         })
