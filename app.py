@@ -158,7 +158,7 @@ CLIENT_SECRET = decrypt_api_key(secrets_dict.get('api_key'), decrypt_pass)
 # Connect to MySQL DB through SQLalchemy
 SQL_PASS = secrets_dict.get('sql_pass')
 
-engine = create_engine(f'mysql+pymysql://wp280:{SQL_PASS}@squirrel/wp280')
+engine = create_engine(f'mysql+pymysql://wp280:{SQL_PASS}@squirrel/wp280', pool_recycle=3600)
 Base.metadata.create_all(engine)
 
 Session = sessionmaker(bind=engine)
@@ -205,6 +205,10 @@ def flatten_data(data):
 
     return df
 
+# Stop gunicorn caching responses - which require dynamic updating!
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    session.close()
 
 # Redirect 404 requests (should handle this better?)
 @app.route('/<path:path>')
@@ -559,7 +563,7 @@ def index():
                     func.find_in_set(crsid, Outing.subs)
                 )
             )
-        )
+        ).order_by(Outing.date_time.asc())
     ).scalars().all()
 
     your_outings = [
@@ -2413,6 +2417,102 @@ def edit_outing():
         return render_template('editouting.html', boat_options=boat_options, outing=outing)
 
     return "Outing not found", 404
+
+# Needs updating at very least
+@app.route('/captains/availability', methods=['GET', 'POST'])
+def inspect_availability():
+    crsid = auth_decorator.principal
+
+    if crsid not in superusers:
+        return redirect(url_for('forbidden', ref='captains'))
+
+    crsid = request.args.get('crsid')
+
+    superuser = superuser_check(crsid, superusers)
+
+    username = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
+
+    # Export data from SQL into a format comprehensible by html-side JS interpreter
+    def load_user_data(crsid):
+        # Fetch all rows for the given crsid
+        rows = session.execute(select(Daily)).scalars().all()
+
+        # Initialize the dictionary
+        state_dates = {}
+        race_dates = {}
+        event_dates = {}
+        notes = {}
+
+        # Process each row
+        for row in rows:
+            date_str = row.date.strftime('%Y%m%d')  # Format date as YYYYMMDD
+            races = row.races
+            events = row.events
+
+            if races:
+                race_dates[date_str] = races
+
+            if events:
+                event_dates[date_str] = events
+
+            user_data = json.loads(row.user_data) if row.user_data else {}
+
+            # Check if the crsid is in user_data
+            if crsid in user_data:
+                state = user_data[crsid]['state']
+                note = user_data[crsid]['notes']
+
+                notes[date_str] = note
+
+                # Initialize list for state if not already present
+                if state not in state_dates:
+                    state_dates[state] = []
+
+                # Add the date to the list for the specific state
+                state_dates[state].append(date_str)
+
+        return state_dates, race_dates, event_dates, notes
+
+    existingData, raceDays, eventDays, userNotes = load_user_data(crsid)
+
+    context = {
+        'existingData': existingData,
+        'crsid': crsid,
+        'username': username,
+        'hours_of_day': hours_of_day,
+        'existing': True,
+        'superuser': superuser,
+        'race_days': raceDays,
+        'event_days': eventDays,
+        'user_notes': userNotes
+    }
+
+    now = datetime.now()
+    year = now.year
+    month = now.month
+    current_month = int(month)
+
+    selected_month = request.form.get('month', now.month)
+
+    if 'refmonth' in request.args:
+        selected_month=request.args.get('refmonth')
+
+    # Convert the selected month to an integer
+    selected_month = int(selected_month)
+
+    # Get days in the month
+    # Get days of the week (short format like "Mon", "Tue", etc.)
+    days_of_week = calendar.weekheader(3).split()
+
+    # Get a matrix where each list represents a week, and days outside the month are zero
+    month_weeks = calendar.monthcalendar(year, selected_month)
+
+    months = [(m, calendar.month_name[m]) for m in range(current_month, 13)]
+
+    return render_template('calendar.html', **context, days_of_week=days_of_week,
+                           month_weeks=month_weeks, months=months,
+                           year=year,
+                           month=selected_month)
 
 @app.route('/get_boat_info', methods=['POST'])
 def get_boat_info():

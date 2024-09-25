@@ -98,6 +98,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const monthData = existingData;
+        console.log(monthData);
 
         document.querySelectorAll('td[data-date]').forEach(cell => {
             const date = cell.dataset.date;

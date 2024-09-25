@@ -128,6 +128,8 @@
                 <td>
                     <a href="{{ url_for('plot', crsid=user.crsid) }}" class="btn btn-primary btn-sm mb-2">View Profile</a>
 
+                    <a href="{{ url_for('inspect_availability', crsid=user.crsid) }}" class="btn btn-primary btn-sm mb-2">Availability</a>
+
                     <a href="{{ url_for('delete_user', crsid=user.crsid) }}" class="btn btn-danger btn-sm">Delete User</a>
                 </td>
 
