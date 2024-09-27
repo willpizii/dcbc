@@ -16,3 +16,5 @@ class Outing(Base):
 
     subs = Column(String(255))
     coach = Column(String(255))
+
+    time_type = Column(String(255))

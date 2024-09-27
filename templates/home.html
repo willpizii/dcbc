@@ -25,7 +25,7 @@
                             {% for outing in outings %}
                                 <tr>
                                     <td><a href="{{ url_for("view_outing", id=outing.outing_id ) }}">{{ outing.date_time.strftime('%Y-%m-%d') }}</a></td>
-                                    <td>{{ outing.date_time.strftime('%H:%M') }}</td>
+                                    <td>{{ outing.date_time.strftime('%H:%M') }} {{ outing.time_type }}</td>
                                     <td>{{ outing.boat_name }}
                                 </tr>
                             {% endfor %}

@@ -31,7 +31,7 @@
                 {% for outing in outings %}
                     <tr id="{{ outing.outing_id }}">
                         <td>{{ outing.date_time.strftime('%Y-%m-%d') }}</td>
-                        <td>{{ outing.date_time.strftime('%H:%M') }}</td>
+                        <td>{{ outing.date_time.strftime('%H:%M') }} {{ outing.time_type }}</td>
                         <td>{{ outing.boat_name }}</td>
                         <td>{{ outing.shell }}</td>
                         <td>{{ outing.coach }}</td>

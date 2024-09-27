@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container-fluid  py-2 px-4">
+    <div class="row">
+        <div class="col">
+            <input class="btn-check btn-outline-secondary" type="radio" id="allOutingsCheck" name="myOutingsCheck"/>
+            <label class="btn" for="allOutingsCheck">All Outings</label>
+            <input class="btn-check btn-outline-primary" type="radio" id="myOutingsCheck" name="myOutingsCheck" checked/>
+            <label class="btn" for="myOutingsCheck">My Outings</label>
+        </div>
+        <div class="col input-group">
+            <div for="fromDateBox" class="input-group-text">Week of:</div>
+            <input class="form-control" type="date" for="weekof" id="fromDateBox" value={{ fromDate }} disabled/>
+        </div>
+
+        <div class="col">
+            <button class="btn btn-secondary" id="previousWeekButton" type="button">Previous Week</button>
+            <button class="btn btn-secondary" id="nextWeekButton" type="button">Next Week</button>
+        </div>
+
+    </div>
+
+    <div id = "outingsContainer" class="row px-2 text-center py-4">
+            <div class="col border rounded pt-2" data-day="Monday"></div><div class='w-100 d-md-none'></div>
+            <div class="col border rounded pt-2" data-day="Tuesday"></div><div class='w-100 d-md-none'></div>
+            <div class="col border rounded pt-2" data-day="Wednesday"></div><div class='w-100 d-md-none'></div>
+            <div class="col border rounded pt-2" data-day="Thursday"></div><div class='w-100 d-md-none'></div>
+            <div class="col border rounded pt-2" data-day="Friday"></div><div class='w-100 d-md-none'></div>
+            <div class="col border rounded pt-2" data-day="Saturday"></div><div class='w-100 d-md-none'></div>
+            <div class="col border rounded pt-2" data-day="Sunday"></div>
+    </div>
+
+</div>
+
+<script>
+    window.yourOutings = {{ user_outings|tojson|default('{}')|safe }};
+    window.subOutings = {{ sub_outings|tojson|default('{}')|safe }};
+    window.otherOutings = {{ other_outings|tojson|default('{}')|safe }};
+    window.fromDate = new Date("{{ fromDate }}");
+</script>
+
+<script src="{{ url_for('static', filename='js/outings.js') }}"></script>
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+
+{% endblock %}

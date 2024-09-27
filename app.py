@@ -18,7 +18,7 @@ from datetime import datetime, time, timedelta
 import calendar
 
 import requests
-from urllib.parse import urlencode
+from urllib.parse import urlencode, unquote
 
 import flask
 from flask import (Flask, redirect, Blueprint, request, jsonify,
@@ -41,7 +41,8 @@ from ucam_webauth.raven.flask_glue import AuthDecorator
 
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect, and_, or_, not_
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.pool import QueuePool
 
 from models.workout import Workout # Import from models.py
 from models.usersdb import User
@@ -158,14 +159,14 @@ CLIENT_SECRET = decrypt_api_key(secrets_dict.get('api_key'), decrypt_pass)
 # Connect to MySQL DB through SQLalchemy
 SQL_PASS = secrets_dict.get('sql_pass')
 
-engine = create_engine(f'mysql+pymysql://wp280:{SQL_PASS}@squirrel/wp280', pool_recycle=3600)
+engine = create_engine(f'mysql+pymysql://wp280:{SQL_PASS}@squirrel/wp280', pool_recycle=3600, poolclass=QueuePool)
 Base.metadata.create_all(engine)
 
 Session = sessionmaker(bind=engine)
-session = Session()
+session = scoped_session(Session)
 
 # Callback URI after authorization on Concept2
-REDIRECT_URI = 'http://wp280.user.srcf.net/callback'
+REDIRECT_URI = 'https://wp280.user.srcf.net/callback'
 
 # Authorization URL
 AUTH_URL = 'https://log.concept2.com/oauth/authorize'
@@ -208,7 +209,9 @@ def flatten_data(data):
 # Stop gunicorn caching responses - which require dynamic updating!
 @app.teardown_appcontext
 def shutdown_session(exception=None):
-    session.close()
+    if exception:
+        session.rollback()
+    session.remove()
 
 # Redirect 404 requests (should handle this better?)
 @app.route('/<path:path>')
@@ -345,7 +348,7 @@ def setup():
                 "last_name": request.form.get("last_name"),
                 "logbookid": request.form.get("id"),
                 "color": request.form.get('color'),
-                "preferred_name": request.form.get("preferred_name"),
+                "preferred_name": request.form.get('preferred_name') if request.form.get('preferred_name') else request.form.get('first_name'),
                 'squad': request.form.get('squad'),
                 'bowside': request.form.get('bowside'),
                 'strokeside': request.form.get('strokeside'),
@@ -468,7 +471,7 @@ def user_settings():
             "first_name": request.form.get('first_name'),
             "last_name": request.form.get('last_name'),
             "color": request.form.get('color'),
-            "preferred_name": request.form.get('preferred_name'),
+            "preferred_name": request.form.get('preferred_name') if request.form.get('preferred_name') else request.form.get('first_name'),
             'squad': request.form.get('squad'),
             'bowside': request.form.get('bowside'),
             'strokeside': request.form.get('strokeside'),
@@ -571,9 +574,6 @@ def index():
         if outing.set_crew is None or crsid not in json.loads(outing.set_crew)  # Check for None and key presence
     ]
 
-    for outing in your_outings:
-        print(outing.boat_name, outing.set_crew ,outing.date_time, outing.subs)
-
     if logbook:
         logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
         workouts = session.execute(
@@ -659,20 +659,27 @@ def authorize():
 # Updated to SQL Handling
 @app.route(f'/callback')
 def callback():
-    code = request.args.get('code')
+    code = unquote(request.args.get('code')).strip()
+    print(f"Received code: {repr(code)}")
     if not code:
         return 'No authorization code received.'
 
     token_params = {
         'grant_type': 'authorization_code',
-        'code': code,
+        'code': f'{code}',
         'redirect_uri': REDIRECT_URI,
         'client_id': CLIENT_ID,
         'client_secret': CLIENT_SECRET
     }
 
     response = requests.post(TOKEN_URL, data=token_params)
+
     token_data = response.json()
+
+    print(token_data)
+
+    if 'access_token' not in token_data:
+        return (f"Error - Expected access token, got invalid response")
 
     crsid = auth_decorator.principal
 
@@ -732,6 +739,9 @@ def load_all():
 
         # Decrypt the data
         token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
+
+    else:
+        return(url_for("setup"))
 
     access_token = token_data['access_token']
     refresh_token = token_data['refresh_token']
@@ -1348,7 +1358,11 @@ def workout():
 # Updated for SQL
 @app.route('/club')
 def club():
-    crsids = session.execute(select(User.crsid)).scalars().all()
+    crsids = session.execute(
+                                select(User.crsid).where(
+                                    not_(func.find_in_set('Inactive', User.tags))
+                                )
+                            ).scalars().all()
     args = request.args
 
     dfs = []
@@ -2037,7 +2051,7 @@ def delete_user():
     if 'crsid' in request.args:
         delid = request.args.get('crsid')
         if not crsid == delid or not superuser_check(crsid, superusers):
-            return url_for(forbidden)
+            return url_for("forbidden")
     else:
         delid = crsid
 
@@ -2349,7 +2363,8 @@ def edit_outing():
                 'set_crew': {}, # Used to populate the crew list, for non-user subs
                 'shell': outing_data.get('shell'),
                 'subs': [], # Used to put into outings for the subs
-                'coach': outing_data.get('coach')
+                'coach': outing_data.get('coach'),
+                'time_type': outing_data.get('timeType')
             }
 
         # Iterate over the form data to process 'sub-' entries
@@ -2592,6 +2607,106 @@ def view_availability():
 @app.route('/outing')
 def view_outing():
     return("NOT IMPLEMENTED!")
+
+@app.route('/outings', methods=['GET', 'POST'])
+def outings():
+
+    if 'weekof' in request.args:
+
+        week_date = datetime.strptime(request.args.get('weekof'), '%Y-%m-%d').date()
+        from_date = datetime.combine(week_date - timedelta(days=week_date.weekday()), datetime.min.time())
+
+        # Calculate the end of the week (Sunday) at 23:59:59
+        to_date = datetime.combine(from_date + timedelta(days=6), datetime.max.time())
+
+
+    else:
+        # Get today's date
+        today = datetime.today()
+
+        # Calculate the start of the week (Monday)
+        from_date = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
+
+        # Calculate the end of the week (Sunday)
+        to_date = datetime.combine(from_date + timedelta(days=6), datetime.max.time())
+
+    crsid = auth_decorator.principal
+
+    result = session.execute(select(User.boats).where(User.crsid == crsid)).scalar()
+
+    # Safely handle the case where the result is None
+    boats = result.split(",") if result else []
+
+    your_outings = session.execute(
+        select(Outing).where(
+            and_(
+                Outing.date_time >= from_date,
+                Outing.date_time <= to_date,
+                Outing.boat_name.in_(boats),
+            )
+        ).order_by(Outing.date_time.asc())
+    ).scalars().all()
+
+    sub_outings = session.execute(
+        select(Outing).where(
+            and_(
+                Outing.date_time >= from_date,
+                Outing.date_time <= to_date,
+                func.find_in_set(crsid, Outing.subs)
+            )
+        ).order_by(Outing.date_time.asc())
+    ).scalars().all()
+
+    other_outings = session.execute(
+        select(Outing).where(
+            and_(
+                Outing.date_time >= from_date,
+                Outing.date_time <= to_date,
+                not_(Outing.boat_name.in_(boats))
+            )
+        ).order_by(Outing.date_time.asc())
+    ).scalars().all()
+
+    other_outings = [
+        outing for outing in other_outings
+        if outing.subs in ['', None] or crsid not in outing.subs.split(',')  # Check if subs is blank
+    ]
+
+    other_outings.extend([
+        outing for outing in your_outings
+        if outing.set_crew not in ['', None] and crsid in json.loads(outing.set_crew)
+    ]) # Capture outings you are subbed out of
+
+    your_outings = [
+        outing for outing in your_outings
+        if outing.set_crew in ['', None] or crsid not in json.loads(outing.set_crew)  # Check for None and key presence
+    ]
+
+    your_outings = [{
+        "date_time": outing.date_time.isoformat(),
+        "boat_name": outing.boat_name,
+        "set_crew": outing.set_crew,
+        "coach": outing.coach if outing.coach else 'No Coach',
+        "time_type": outing.time_type if outing.time_type else 'ATBH'
+    } for outing in your_outings]
+
+    sub_outings = [{
+        "date_time": outing.date_time.isoformat(),
+        "boat_name": outing.boat_name,
+        "set_crew": outing.set_crew,
+        "coach": outing.coach if outing.coach else 'No Coach',
+        "time_type": outing.time_type if outing.time_type else 'ATBH'
+    } for outing in sub_outings]
+
+    other_outings = [{
+        "date_time": outing.date_time.isoformat(),
+        "boat_name": outing.boat_name,
+        "set_crew": outing.set_crew,
+        "coach": outing.coach if outing.coach else 'No Coach',
+        "time_type": outing.time_type if outing.time_type else 'ATBH'
+    } for outing in other_outings]
+
+    return(render_template("outings.html", fromDate = from_date, toDate = to_date, crsid=crsid, user_outings = your_outings, other_outings=other_outings, sub_outings= sub_outings))
 
 def superuser_check(crsid, superusers):
     if crsid in superusers:
