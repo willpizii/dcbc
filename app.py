@@ -55,8 +55,10 @@ from dcbc.models.base import Base
 
 from dcbc.project.session import session, engine
 from dcbc.project.auth_utils import load_secrets, setup_auth, load_users, get_decrypt_pass, auth_decorator, superuser_check
+from dcbc.project.utils import format_seconds
 
 from dcbc.routes.captains import captains_bp
+from dcbc.routes.coaches import coach_bp
 
 class R(flask.Request):
     trusted_hosts = {'wp280.user.srcf.net'}
@@ -66,6 +68,7 @@ app.request_class = R
 
 # Comment these for live deployment
 app.register_blueprint(captains_bp)
+app.register_blueprint(coach_bp)
 
 app.config['SERVER_NAME'] = 'wp280.user.srcf.net'
 app.config['SESSION_COOKIE_NAME'] = 'cookie_session'
@@ -77,7 +80,7 @@ app.wsgi_app = ProxyFix(
 # Change the before_request behaviour to vary per request
 @app.before_request
 def check_authentication():
-    if request.path.startswith('/static/') or request.path.startswith('/coach') or request.path in ['/favicon.ico', '/webhook']:
+    if request.path.startswith('/static/') or request.path.startswith('/coach') or request.path in ['/coach', '/favicon.ico', '/webhook']:
         return None  # Do not require a raven login for the above
     return auth_decorator.before_request()
 
@@ -1511,241 +1514,6 @@ def pbs():
         two_ks = two_ks, five_ks = five_ks,
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
-@app.route('/coach')
-def coach():
-    coach_file = 'dcbc/data/coaches.txt'
-    approved_file = 'dcbc/data/approved_coaches.txt'
-
-    args = request.args
-    username = None
-    if 'username' in args:
-        username = args.get('username')
-
-    notfound=False
-    if 'notfound' in args:
-        notfound = args.get('notfound')
-
-    code = False
-    if 'tfa_code' in args:
-        code = args.get('tfa_code')
-
-    if not username or notfound:
-        return render_template_string('''
-            <h1>Welcome to the Coach Environment</h1>
-            {% if notfound %}
-                <h2>User not found, try again!</h2>
-            {% endif %}
-            <form method="get" action="{{ url_for('coach') }}">
-                <label for="crsid">Username:</label>
-                <input type="text" id="username" name="username" required>
-                <input type="submit" value="View">
-            </form>
-        ''', notfound=notfound)
-
-    if not os.path.exists(coach_file) or os.path.getsize(coach_file) == 0:
-        with open(coach_file, 'w') as file:
-            json.dump({}, file)  # Initialize with an empty dictionary
-
-    with open(coach_file, 'r') as file:
-        coaches = json.load(file)
-
-    if not os.path.exists(approved_file):
-        return("Approved coaches file is missing!")
-
-    with open(approved_file, 'r') as file:
-        approved_coaches = [line.strip() for line in file.readlines()]
-
-    if username not in approved_coaches:
-        return(redirect(url_for('coach', username=username, notfound=True)))
-
-    def update_coaches(coaches):
-        with open(coach_file, 'w') as file:
-            json.dump(coaches, file)
-
-    def get_coach(name, coaches):
-        return coaches.get(name)
-
-    def update_coach(name, data, coaches):
-        coaches[name] = data
-        update_coaches(coaches)
-
-    def generate_totp_secret():
-        return pyotp.random_base32()
-
-    def create_coach(coach, coaches):
-        if coach in coaches:
-            return False
-        else:
-            secret = generate_totp_secret()
-            coaches[coach] = {
-                'username': coach,
-                '2FA_secret': secret,
-                'app_added': False
-                }
-            update_coaches(coaches)
-            return True
-
-    create_coach(username, coaches)
-
-    apped = coaches[username]['app_added']
-
-    def generate_qr_code(username, coaches):
-        user = get_coach(username, coaches)
-        if not user:
-            return None
-        totp = pyotp.TOTP(user['2FA_secret'])
-        uri = totp.provisioning_uri(username, issuer_name="DCBC Ergs Coach")
-        qr = qrcode.make(uri)
-        buffer = BytesIO()
-        qr.save(buffer)
-        buffer.seek(0)
-        return base64.b64encode(buffer.getvalue()).decode('utf-8')
-
-    def verify_2fa(username, code, coaches):
-        user = get_coach(username, coaches)
-        totp = pyotp.TOTP(user['2FA_secret'])
-        return totp.verify(code)
-
-    if code != False:
-        if verify_2fa(username, code, coaches):
-            cookie_session['authenticated'] = True
-
-            user = get_coach(username, coaches)
-            if not user['app_added']:
-                user['app_added'] = True
-                coaches[username] = user
-                update_coaches(coaches)
-
-            return(redirect(url_for('coachview', username=username)))
-        else:
-            return(render_template_string('''
-                2FA Failed!
-
-                <a href={{ url_for('coach') }}> Go back </a>
-            '''))
-
-    qr_code_base64 = generate_qr_code(username, coaches)
-    qr_code_url = f'data:image/png;base64,{qr_code_base64}' if qr_code_base64 else None
-
-    return(render_template_string('''
-            <!-- enable_2fa.html -->
-            {% if username %}
-                {% if not apped %}
-                    <img src="{{ qrcode }}" alt="Scan this QR code with your Authenticator app">
-                    <p>After scanning the QR code, enter the code generated by your authenticator app:</p>
-                {% else %}
-                    <p>Enter the code from your authenticator app:</p>
-                {% endif %}
-                <form method="get" action="{{ url_for('coach', username=username, code=tfa_code) }}">
-                    <input type="text" name="tfa_code" required>
-                    <input type="hidden" name="username" value="{{ username }}">
-                    <button type="submit">Verify</button>
-                </form>
-            {% endif %}
-    ''', username=username, qrcode=qr_code_url, apped=apped))
-
-@app.route('/coach/view')
-def coachview():
-    if not cookie_session.get('authenticated'):
-        return(render_template_string('''
-            <h1>Session is not authenticated!</h1>
-            <p><a href="{{ url_for('coach')}}"> Try logging in again! </a></p>
-        '''))
-    else:
-        crsids = session.execute(select(User.crsid)).scalars().all()
-        args = request.args
-
-        dfs = []
-
-        totaldist = 0
-        totaltime = 0
-
-        if 'from_date' in args and 'to_date' in args:
-            from_date = args.get('from_date')
-            to_date = args.get('to_date')
-
-        else:
-            from_date = datetime.strptime('2024-10-01', '%Y-%m-%d')
-            to_date = datetime.strptime('2025-06-30', '%Y-%m-%d')
-
-        for crsid in crsids:
-            logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
-
-            query = select(Workout).where(Workout.user_id == logid)
-
-            userdf = pd.read_sql(query, engine)
-
-            userdf['date'] = pd.to_datetime(userdf['date'])
-            userdf['distance'] = pd.to_numeric(userdf['distance'], errors='coerce')
-
-            userdf = userdf[(userdf['date'] >= from_date) & (userdf['date'] <= to_date)]
-
-            tdf = pd.DataFrame({f'{crsid}_date': userdf['date'],
-                                f'{crsid}_distance': userdf['distance']})
-
-            tdf = tdf.sort_values(f'{crsid}_date')
-
-            dfs.append(tdf)
-
-            totaldist += userdf['distance'].sum()
-            totaltime += userdf['time'].sum()
-
-        totaltime = format_seconds(totaltime/10)
-
-        try:
-            clubdf = pd.concat(dfs, axis=0, ignore_index=True)
-        except:
-            return(render_template(
-            template_name_or_list='club.html',
-            script='',
-            div=['<p>No user data found! Make sure some data exists. </p>'], totaldist = 0, totaltime = 0,
-            clubdf = [],
-            club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
-
-        p1 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime')
-
-        for crsid in crsids:
-            if f'{crsid}_date' not in clubdf:
-                continue
-
-            date=clubdf[f'{crsid}_date']
-            distance=clubdf[f'{crsid}_distance'].cumsum()
-            idcolor = session.execute(select(User.color).where(User.crsid == crsid)).scalar()
-            idname = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
-
-            source = ColumnDataSource(data=dict(
-                x=date,
-                y=distance,
-                legend_label=[idname] * len(date)  # Repeat crsid for each data point
-            ))
-
-            p1.line(
-                x='x',
-                y='y',
-                source=source,
-                alpha=0.8,
-                line_width=3,
-                line_color=idcolor)
-
-
-        hover = HoverTool(tooltips=[
-            ('Name','@legend_label')
-        ], mode='mouse')
-
-        p1.add_tools(hover)
-
-        p1.yaxis.formatter = NumeralTickFormatter(format='0.0a')
-
-        script1, div1 = components(p1)
-
-        return(render_template(
-            template_name_or_list='coach.html',
-            script=[script1],
-            div=[div1], totaldist = totaldist, totaltime = totaltime,
-            clubdf = clubdf,
-            club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
-
-
 @app.route('/commit_crews', methods=['POST'])
 def commit_crews():
     for crsid, boat_list in request.form.items():
@@ -2226,72 +1994,6 @@ def outings():
     print(races_events)
 
     return(render_template("outings.html", fromDate = from_date, toDate = to_date, crsid=crsid, user_outings = your_outings, other_outings=other_outings, sub_outings= sub_outings, races = races_events))
-
-
-@app.route('/coach/outings', methods=['GET', 'POST'])
-def coach_outings():
-
-    if 'weekof' in request.args:
-
-        week_date = datetime.strptime(request.args.get('weekof'), '%Y-%m-%d').date()
-        from_date = datetime.combine(week_date - timedelta(days=week_date.weekday()), datetime.min.time())
-
-        # Calculate the end of the week (Sunday) at 23:59:59
-        to_date = datetime.combine(from_date + timedelta(days=6), datetime.max.time())
-
-
-    else:
-        # Get today's date
-        today = datetime.today()
-
-        # Calculate the start of the week (Monday)
-        from_date = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
-
-        # Calculate the end of the week (Sunday)
-        to_date = datetime.combine(from_date + timedelta(days=6), datetime.max.time())
-
-
-    all_outings = session.execute(
-        select(Outing).where(
-            and_(
-                Outing.date_time >= from_date,
-                Outing.date_time <= to_date
-            )
-        ).order_by(Outing.date_time.asc())
-    ).scalars().all()
-
-    sub_outings = []
-
-    other_outings = []
-
-    all_outings = [{
-        "date_time": outing.date_time.isoformat(),
-        "boat_name": outing.boat_name,
-        "set_crew": outing.set_crew,
-        "coach": outing.coach if outing.coach else 'No Coach',
-        "time_type": outing.time_type if outing.time_type else 'ATBH',
-        'notes': outing.notes if outing.notes else None
-    } for outing in all_outings]
-
-
-    return(render_template("coachoutings.html", fromDate = from_date, toDate = to_date, user_outings = all_outings, other_outings=other_outings, sub_outings= sub_outings))
-
-
-def format_seconds(seconds):
-    # Calculate minutes, seconds, and tenths of seconds
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    seconds_remainder = seconds % 60
-    seconds_int = int(seconds_remainder)
-    tenths = int((seconds_remainder - seconds_int) * 10)
-
-    # Format the result as "minutes:seconds.tenths"
-    if hours > 0:
-        return f"{hours}:{minutes:02d}:{seconds_int:02d}.{tenths}"
-    elif minutes > 0:
-        return f"{minutes}:{seconds_int:02d}.{tenths}"
-    else:
-        return f'{seconds_int}.{tenths}'
 
 app.config.update(
     SESSION_COOKIE_SECURE=False,  # Ensure cookies are only sent over HTTPS

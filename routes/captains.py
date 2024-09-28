@@ -2,7 +2,7 @@ from flask import Blueprint, request, session, redirect, url_for, render_templat
 from datetime import datetime, timedelta
 import calendar
 import json
-from sqlalchemy import select, asc, and_
+from sqlalchemy import select, asc, and_, update
 
 # Import necessary utilities and decorators
 from dcbc.project.auth_utils import auth_decorator, superuser_check
@@ -50,7 +50,6 @@ def home():
                 .values(tags=','.join(tags))
             )
         session.commit()
-        return redirect(url_for('captains'))
 
     unique_tags = set()
     for user in users:
@@ -319,17 +318,19 @@ def edit_boat():
 
     return(render_template('editboat.html', boats_list = boats_list, user_list = user_crsids)) # temp
 
-@captains_bp.route('/outings')
+@captains_bp.route('/outings', methods=['GET', 'POST'])
 def set_outings():
-    if 'from' not in request.args:
-        from_date = datetime.today().date()
-    else:
-        from_date = request.args.get('from')
+    if request.method == 'POST':
+        delete_id = request.form.get('outing_id')
 
-    if 'to' not in request.args:
-        to_date = datetime.today().date() + timedelta(days=7)
-    else:
-        to_date = request.args.get('to')
+        delete_outing = session.execute(select(Outing).filter_by(outing_id=delete_id)).scalar_one_or_none()
+
+        if delete_outing:
+            session.delete(delete_outing)
+            session.commit()
+
+    from_date = datetime.strptime(request.args.get('from', datetime.today().strftime('%Y-%m-%d')), '%Y-%m-%d').date()
+    to_date = datetime.strptime(request.args.get('to', (datetime.today() + timedelta(days=7)).strftime('%Y-%m-%d')), '%Y-%m-%d').date()
 
     next_outings = session.execute(
             select(Outing).where(
@@ -337,10 +338,8 @@ def set_outings():
                             Outing.date_time >= from_date,
                             Outing.date_time < to_date
                         )
-                )
+                ).order_by(Outing.date_time.asc())
         ).scalars().all()
-
-    print(next_outings)
 
     return render_template('setoutings.html', outings = next_outings, from_date = from_date, to_date = to_date)
 
@@ -350,9 +349,8 @@ def edit_outing():
         # Handle POST request for editing or creating an outing
         outing_data = request.form  # Assuming you're sending JSON data
 
-        print(outing_data)
-
         new_outing = {
+                'outing_id': outing_data.get('outing_id') if 'outing_id' in outing_data else None,
                 'date_time': datetime.strptime(f"{outing_data.get('date')} {outing_data.get('time')}", "%Y-%m-%d %H:%M"),
                 'boat_name': outing_data.get('boat_id'),
                 'set_crew': {}, # Used to populate the crew list, for non-user subs
@@ -415,11 +413,11 @@ def edit_outing():
         boat_options = [row[0] for row in session.execute(
             select(Boat.name).where(Boat.active == True)).fetchall()]
 
-        return render_template('editouting.html', boat_options=boat_options)
+        return render_template('editouting.html', boat_options=boat_options, outing='new')
 
     # Handle case where outing is being edited
     outing_id = args.get('outing')
-    outing = session.execute(select(Outing).where(id=outing_id)).first()
+    outing = session.execute(select(Outing).where(Outing.outing_id==outing_id)).scalars().first()
 
     if outing:
         boat_options = [row[0] for row in session.execute(

@@ -24,7 +24,12 @@
 
 </style>
 
-<form method="POST" id="submitOuting" action="{{ url_for('captains.edit_outing') }}">
+<form method="POST" id="submitOuting" action="{{ url_for('captains.edit_outing', outing=outing.outing_id) }}">
+
+{% if outing != 'new' %}
+    <input hidden name="outing_id" value="{{ outing.outing_id }}"/>
+{% endif %}
+
 <div class="container-fluid mt-4">
     <h3> Build an Outing </h3>
     <div class="row px-5 py-2">
@@ -33,35 +38,34 @@
                 <select id="boatSelect" class="form-select" name="boat_id" required>
                     <option value="">Select a Boat</option>
                     {% for boat in boat_options %}
-                        <option value="{{ boat }}">{{ boat }}</option>
+                        <option value="{{ boat }}" {% if outing.boat_name and outing.boat_name == boat %}selected{% endif %}>{{ boat }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: {% if outing and outing != 'new' %} block {% else %} none {% endif %};">
                 <h3> Set Time </h3>
-
                 <table><tr>
-                    <td><input type="date" class="form-control" id="dateInput" placeholder="Select Date" name="date" required></input></td>
-                    <td><input type="time" class="form-control" id="timeInput" placeholder="Select Time" name="time" required></input></td>
-                    <td><input type="text" class="form-control" placeholder="ATBH, OTE, OTW?" name="timeType" required></input></td>
+                    <td><input type="date" class="form-control" id="dateInput" placeholder="Select Date" name="date" value="{{ outing != 'new' and outing.date_time.strftime('%Y-%m-%d') or '' }}" required></td>
+                    <td><input type="time" class="form-control" id="timeInput" placeholder="Select Time" name="time" value="{{ outing != 'new' and outing.date_time.strftime('%H:%M') or '' }}" required></td>
+                    <td><input type="text" class="form-control" placeholder="ATBH, OTE, OTW?" name="timeType" value="{{ outing != 'new' and outing.time_type or '' }}" required></td>
                 </tr></table>
            </div>
             <div class="row border rounded mb-3 p-4 availDiv" style="display: none;"></div>
-            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: {% if outing and outing != 'new' %} block {% else %} none {% endif %};">
                 <h3> Coach </h3>
-                <input type="text" class="form-control" id="coachInput" placeholder="Who is coaching?" name="coach"></input>
+                <input type="text" class="form-control mb-2" id="coachInput" placeholder="Who is coaching?" name="coach" value="{{ outing.coach }}"></input>
 
                 <h3> Shell </h3>
-                <input class="form-control" id="shellField" name="shell" required/>
+                <input class="form-control mb-2" id="shellField" name="shell" value="{{ outing.shell }}" required/>
 
                 <h3> Notes </h3>
-                <input class="form-control" id="notesField" name="notes" placeholder="Notes..."/>
+                <input class="form-control mb-1" id="notesField" name="notes" placeholder="Notes..." value="{{ outing.notes }}"/>
             </div>
         </div>
 
         <div class="col mx-2">
-            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
-                <table id="boatInfoTable" style="display: none;">
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: {% if outing and outing != 'new' %} block {% else %} none {% endif %};">
+                <table id="boatInfoTable" style="display: {% if outing and outing != 'new' %} block {% else %} none {% endif %};">
                     <thead>
                         <tr>
                             <th>Position</th>
@@ -76,19 +80,21 @@
             </div>
             <div id="replacementsContainer" class="row border rounded mb-3 p-4" style="display: none;"></div>
             <div class="row border rounded mb-3 p-4 subAvailDiv" style="display: none;"></div>
-            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
-                <button class="btn btn-primary" id="submitButton" action="submit">Save Outing </button>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: {% if outing and outing != 'new' %} block {% else %} none {% endif %};">
+                <button class="btn btn-primary" id="submitButton" action="submit">Save Outing</button>
             </div>
         </div>
     </div>
 </div>
 </form>
 
+
 <script src="{{ url_for('static', filename='js/editouting.js') }}"> </script>
 
-
-
-
+<script>
+    window.boatName = "{{ outing.boat_name }}";
+    window.outing = "{{ outing }}";
+</script>
 
 
 {% endblock %}

@@ -1,6 +1,20 @@
 document.addEventListener('DOMContentLoaded', function() {
+    const outing = window.outing; // Pass this variable from your template
+    const boatName = window.boatName; // Assuming you have boat_name available in the outing object
+
+    // Call the function if outing is not 'new'
+    if (outing !== 'new' && boatName) {
+        populateRowers(boatName);
+    }
+
     document.getElementById('boatSelect').addEventListener('change', function() {
         const boatName = this.value;
+        populateRowers(boatName);
+    });
+
+    console.log('Selected Boat Name:', boatName); // Log the boat name
+
+    function populateRowers(boatName) {
         const boatInfoDivs = document.querySelectorAll('.boatInfoDiv');
         const boatInfoTable = document.getElementById('boatInfoTable');
         const shellField = document.getElementById('shellField');
@@ -154,10 +168,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     const selectedDate = dateInput.value;
                     if (selectedDate){
                         const availableCrsids = Array.from(boatInfoBody.querySelectorAll('td[id]')).map(cell => cell.id);
-                        showAvailabilities(selectedDate, availableCrsids)
-
+                        showAvailabilities(selectedDate, availableCrsids);
                     }
-
                 }
             })
             .catch(error => console.error('Error:', error));
@@ -176,7 +188,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             availDiv.style.display = 'none';
         }
-    });
+    }
 
     function showAvailabilities(selectedDate, availableCrsids){
         if (!selectedDate || isNaN(Date.parse(selectedDate))) {

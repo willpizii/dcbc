@@ -69,7 +69,7 @@
 
     <div class="table-responsive">
 
-    <form method="POST" id="captainForm" action="/captains">
+    <form method="POST" id="captainForm" action="{{url_for("captains.home")}}">
 
     <table class="table table-bordered table-hover table-striped">
         <thead class="table-dark">
@@ -81,6 +81,7 @@
                 <th scope="col" width="5%">Strokeside</th>
                 <th scope="col" width="5%">Cox</th>
                 <th scope="col" width="20%">Tags</th>
+                <th scope="col" width="5%">Logbook?</th>
                 <th scope="col" width="10%">Action</th>
             </tr>
         </thead>
@@ -123,6 +124,14 @@
 
                         <button type="button" class="btn btn-success btn-sm mt-2" id="add-tag-{{ user.crsid }}" data-crsid="{{ user.crsid }}">Add Tag</button>
                     </div>
+                </td>
+
+                <td>
+                    {% if user.logbook %}
+                        Yes
+                    {% else %}
+                        No
+                    {% endif %}
                 </td>
 
                 <td>
