@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Date, Text
-from models.base import Base  # Import the shared Base
+from dcbc.models.base import Base  # Import the shared Base
 
 class Event(Base):
     __tablename__ = 'events'

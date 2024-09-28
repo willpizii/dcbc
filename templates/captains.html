@@ -38,7 +38,7 @@
     }
 </style>
 
-<div class="container py-4">
+<div class="container-fluid px-5 py-4">
     <h3 class="mb-4">Welcome to the Captain's Space</h3>
 
     <a type="button" class="btn btn-primary mb-3" href='/captains/races'>View and Change Races and Events</a>
@@ -128,7 +128,7 @@
                 <td>
                     <a href="{{ url_for('plot', crsid=user.crsid) }}" class="btn btn-primary btn-sm mb-2">View Profile</a>
 
-                    <a href="{{ url_for('inspect_availability', crsid=user.crsid) }}" class="btn btn-primary btn-sm mb-2">Availability</a>
+                    <a href="{{ url_for('captains.availability', crsid=user.crsid) }}" class="btn btn-primary btn-sm mb-2">Availability</a>
 
                     <a href="{{ url_for('delete_user', crsid=user.crsid) }}" class="btn btn-danger btn-sm">Delete User</a>
                 </td>

@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Date, Text, JSON
-from models.base import Base  # Import the shared Base
+from dcbc.models.base import Base  # Import the shared Base
 
 class Daily(Base):
     __tablename__ = 'daily'

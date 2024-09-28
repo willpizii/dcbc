@@ -9,7 +9,7 @@
             <input type="text" id="tagSearch" class="form-control" placeholder="Filter by Anything" oninput="filter()">
         </div>
         <div class="col-md-2">
-            <a href="{{ url_for('edit_boat', boat='new')}}" class='btn btn-primary'>New Boat</a>
+            <a href="{{ url_for('captains.edit_boat', boat='new')}}" class='btn btn-primary'>New Boat</a>
         </div>
     </div>
     <table class="table table-bordered table-hover table-striped">
@@ -24,7 +24,7 @@
         <tbody id="userTableBody">
             {% for boat in boats_list %}
                 <tr>
-                    <td> <a href={{ url_for("edit_boat", boat=boat.name) }} class='btn btn-primary'>{{boat.name}}</a> </td>
+                    <td> <a href={{ url_for("captains.edit_boat", boat=boat.name) }} class='btn btn-primary'>{{boat.name}}</a> </td>
                     <td>
                         <p>{{ boat.shell }}</p>
                     </td>

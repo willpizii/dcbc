@@ -22,8 +22,8 @@
     <div class="d-flex flex-column min-vh-100">
         <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #bb0088;" class="mb-4">
             <div class="container-fluid">
-                <a class="navbar-brand" href="{{ url_for('index') }}">
-                    <img src="{{ url_for('static', filename='armarrow.svg') }}" width="80" height="80" alt="">
+                <a class="navbar-brand" href="#">
+                    <img src="{{ url_for('static', filename='griffin.svg') }}" width="80" height="80" alt="">
                 </a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
                     aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -31,41 +31,10 @@
                 </button>
                 <div class="collapse navbar-collapse" id="navbarNav">
                     <ul class="navbar-nav ms-auto">
-                        {% if superuser %}
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('captains.home') }}"><b>Captains</b></a>
-                            </li>
-                        {% endif %}
-                        <li class="nav-item dropdown">
-
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Ergs
-                            </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{{ url_for('club') }}">Club Ergs</a></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{{ url_for('plot') }}">Your Ergs</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('pbs') }}">Your PBs</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('data') }}">View in Table</a></li>
-                            </ul>
-                        </li>
-
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('outings') }}">Outings</a>
+                            <a class="nav-link" href="{{ url_for('coach_outings') }}">Outings</a>
                         </li>
 
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('set_availabilities') }}">Availability</a>
-                        </li>
-
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('user_settings') }}">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" fill="#FFFFFF" class="bi bi-person-fill-gear" viewBox="0 0 16 16">
-                                    <path d="M11 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0m-9 8c0 1 1 1 1 1h5.256A4.5 4.5 0 0 1 8 12.5a4.5 4.5 0 0 1 1.544-3.393Q8.844 9.002 8 9c-5 0-6 3-6 4m9.886-3.54c.18-.613 1.048-.613 1.229 0l.043.148a.64.64 0 0 0 .921.382l.136-.074c.561-.306 1.175.308.87.869l-.075.136a.64.64 0 0 0 .382.92l.149.045c.612.18.612 1.048 0 1.229l-.15.043a.64.64 0 0 0-.38.921l.074.136c.305.561-.309 1.175-.87.87l-.136-.075a.64.64 0 0 0-.92.382l-.045.149c-.18.612-1.048.612-1.229 0l-.043-.15a.64.64 0 0 0-.921-.38l-.136.074c-.561.305-1.175-.309-.87-.87l.075-.136a.64.64 0 0 0-.382-.92l-.148-.045c-.613-.18-.613-1.048 0-1.229l.148-.043a.64.64 0 0 0 .382-.921l-.074-.136c-.306-.561.308-1.175.869-.87l.136.075a.64.64 0 0 0 .92-.382zM14 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0"/>
-                                </svg>
-                            </a>
-                        </li>
-                        <!-- Dark Mode Toggle -->
                         <li class="nav-item">
                             <button id="darkModeToggle" class="btn"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="black" class="bi bi-brightness-high" viewBox="0 0 16 16">
                                 <path d="M12 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/>
@@ -76,15 +45,12 @@
             </div>
         </nav>
 
-
-        <!-- Content block that will expand to fill available space -->
         <div class="flex-grow-1">
             {% block content %}
             <!-- Your content here -->
             {% endblock %}
         </div>
 
-        <!-- Navbar at the bottom, inside the flex container -->
         <nav class="navbar bg-body-tertiary">
             <div class="container-fluid d-flex justify-content-between align-items-center">
                 <span class="text-muted"><b>2024</b> Will Pizii</span>
@@ -98,16 +64,7 @@
                 </span>
             </div>
         </nav>
-
-
     </div>
-    <!-- scripts import! -->
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bokeh/3.4.1/bokeh.min.js"
-        integrity="sha512-iH5rrOjYD1wVVcGRP3MAYcLXOsuDrbf0zPLvAv/H5ehk97HJfbmk9mQ6FDFwDWXiaGdZ9cS7GskmMei2Wc7q0w=="
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
-
 </body>
 
 <script>

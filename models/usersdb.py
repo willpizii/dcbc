@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean, Text
-from models.base import Base  # Import the shared Base
+from dcbc.models.base import Base  # Import the shared Base
 
 # Define the table structure with only the required columns
 class User(Base):

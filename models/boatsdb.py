@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Text, Boolean
-from models.base import Base  # Import the shared Base
+from dcbc.models.base import Base  # Import the shared Base
 
 # Define the table structure with only the required columns
 class Boat(Base):

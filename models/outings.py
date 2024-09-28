@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import Column, String, Text, Boolean, DateTime, JSON
-from models.base import Base  # Import the shared Base
+from dcbc.models.base import Base  # Import the shared Base
 
 # Define the table structure with only the required columns
 class Outing(Base):
@@ -18,3 +18,4 @@ class Outing(Base):
     coach = Column(String(255))
 
     time_type = Column(String(255))
+    notes = Column(Text)

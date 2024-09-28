@@ -1,37 +1,3 @@
-const races = window.races;
-
-// Function to add races to each day div
-function addRacesToDay(dayDiv, dayName, races) {
-    // Filter the races that match the day
-    const dayRaces = races.filter(race => {
-        const raceDate = new Date(race.date);
-        const raceDayName = raceDate.toLocaleString('en-US', { weekday: 'long' });
-        return raceDayName === dayName;
-    });
-
-    // If there are races for the day, create a section for them
-    if (dayRaces.length > 0) {
-        dayRaces.forEach(race => {
-            const raceInfo = document.createElement('div');
-            raceInfo.classList.add('race-info', 'mb-2', 'card');
-
-            // Set border color based on race type
-            if (race.type === 'Race') {
-                raceInfo.style.borderColor = '#bb0088'; // Border for race
-            } else if (race.type === 'Event') {
-                raceInfo.style.borderColor = '#0088bb'; // Border for event
-            }
-
-            raceInfo.innerHTML = `
-                <h5 class='card-title card-header'>${race.name}</h5>
-                <i>${race.crews.split(',').join(', ')}</i>
-            `;
-
-            dayDiv.appendChild(raceInfo);
-        });
-    }
-}
-
 // Assuming you have a structure similar to this for your outings
 const outingsByDay = {
     Monday: [],
@@ -44,8 +10,6 @@ const outingsByDay = {
 };
 
 const yourOutings = window.yourOutings; // Pass from Flask
-const subOutings = window.subOutings;   // Pass from Flask
-const otherOutings = window.otherOutings;   // Pass from Flask
 
 // Function to add outings to outingsByDay
 function addOutings(outings, outingsByDay, outingType) {
@@ -55,8 +19,6 @@ function addOutings(outings, outingsByDay, outingType) {
 
         if (outingType === 'your') {
             outing.type = 'your';
-        } else if (outingType === 'sub') {
-            outing.type = 'sub';
         } else {
             outing.type = 'other';
         }
@@ -68,8 +30,6 @@ function addOutings(outings, outingsByDay, outingType) {
 
 // Fill outingsByDay with data from all three sources
 addOutings(yourOutings, outingsByDay, 'your');
-addOutings(subOutings, outingsByDay, 'sub');
-addOutings(otherOutings, outingsByDay, 'other');
 
 // Calculate the dates for the week starting from fromDate
 const fromDate = window.fromDate; // Ensure this is set correctly in your template
@@ -92,9 +52,6 @@ dayNames.forEach((day, index) => {
         // Clear any existing content in the dayDiv and append the header
         dayDiv.innerHTML = ''; // Clear existing content
         dayDiv.appendChild(header); // Append the h3 header
-
-        // Add races below the header
-        addRacesToDay(dayDiv, day, races);
 
         let visibleOutingsCount = 0; // Track visible outings count for the day
 
@@ -133,7 +90,6 @@ dayNames.forEach((day, index) => {
                             ${outing.notes ? `<tr><td><strong>Notes:</strong></td><td>${outing.notes}</td></tr>` : ''}
                         </table>
                     </div>
-                    ${outing.type === 'sub' ? '<div class="card-footer"><i>Subbed Outing</i></div>' : ''}
                 `;
 
                 // Append card body to the outing info card
@@ -180,7 +136,6 @@ function toggleOtherOutings(showOther) {
     });
 }
 
-
 // Function to draw the 'No outings for this day' message
 function drawNoOutingsMessage(dayDiv) {
     // Remove any existing message first
@@ -200,22 +155,6 @@ function drawNoOutingsMessage(dayDiv) {
     dayDiv.appendChild(noOutingsMessage);
 }
 
-// Event listeners for radio buttons
-document.getElementById('allOutingsCheck').addEventListener('change', function() {
-    if (this.checked) {
-        toggleOtherOutings(true); // Show 'other' outings when "All Outings" is selected
-    }
-});
-
-document.getElementById('myOutingsCheck').addEventListener('change', function() {
-    if (this.checked) {
-        toggleOtherOutings(false); // Hide 'other' outings when "My Outings" is selected
-    }
-});
-
-// Initially hide 'other' outings since 'My Outings' is checked by default
-toggleOtherOutings(false);
-
 document.getElementById('nextWeekButton').addEventListener('click', function() {
     // Get the value of the date input
     const fromDate = new Date(document.getElementById('fromDateBox').value);
@@ -227,7 +166,7 @@ document.getElementById('nextWeekButton').addEventListener('click', function() {
     const nextWeekDate = fromDate.toISOString().split('T')[0];
 
     // Redirect to /outings with the weekof parameter
-    window.location.href = `/outings?weekof=${nextWeekDate}`;
+    window.location.href = `/coach/outings?weekof=${nextWeekDate}`;
 });
 document.getElementById('previousWeekButton').addEventListener('click', function() {
     // Get the value of the date input
@@ -240,20 +179,15 @@ document.getElementById('previousWeekButton').addEventListener('click', function
     const previousWeekDate = fromDate.toISOString().split('T')[0];
 
     // Redirect to /outings with the weekof parameter
-    window.location.href = `/outings?weekof=${previousWeekDate}`;
+    window.location.href = `/coach/outings?weekof=${previousWeekDate}`;
 });
 
 // Function to filter outings based on input text
 function filterOutings(searchText) {
-    const showOtherOutings = document.querySelector("#allOutingsCheck").checked; // Check if 'All Outings' is selected
+    // Get all outing cards
     const outingCards = document.querySelectorAll('.card');
 
     outingCards.forEach(card => {
-        // Skip 'other' outings if they are supposed to be hidden
-        if (card.classList.contains('other-outing') && !showOtherOutings) {
-            return; // Don't include 'other' outings in the search if they are hidden
-        }
-
         // Get the card content (text inside the card)
         const cardText = card.textContent.toLowerCase();
 

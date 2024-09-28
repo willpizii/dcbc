@@ -22,7 +22,7 @@ from urllib.parse import urlencode, unquote
 
 import flask
 from flask import (Flask, redirect, Blueprint, request, jsonify,
-                   render_template_string, send_file, url_for,
+                   render_template_string, send_file, url_for, g,
                    make_response, render_template, send_from_directory)
 from flask import session as cookie_session
 
@@ -37,6 +37,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import Fernet
 
+from werkzeug.middleware.proxy_fix import ProxyFix
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect, and_, or_, not_
@@ -44,13 +45,18 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
 
-from models.workout import Workout # Import from models.py
-from models.usersdb import User
-from models.boatsdb import Boat
-from models.dailydb import Daily
-from models.eventdb import Event
-from models.outings import Outing
-from models.base import Base
+from dcbc.models.workout import Workout # Import from models.py
+from dcbc.models.usersdb import User
+from dcbc.models.boatsdb import Boat
+from dcbc.models.dailydb import Daily
+from dcbc.models.eventdb import Event
+from dcbc.models.outings import Outing
+from dcbc.models.base import Base
+
+from dcbc.project.session import session, engine
+from dcbc.project.auth_utils import load_secrets, setup_auth, load_users, get_decrypt_pass, auth_decorator, superuser_check
+
+from dcbc.routes.captains import captains_bp
 
 class R(flask.Request):
     trusted_hosts = {'wp280.user.srcf.net'}
@@ -59,111 +65,41 @@ app = Flask(__name__)
 app.request_class = R
 
 # Comment these for live deployment
-dev_bp = Blueprint('dev', __name__, url_prefix='/dev')
-app.register_blueprint(dev_bp)
+app.register_blueprint(captains_bp)
 
 app.config['SERVER_NAME'] = 'wp280.user.srcf.net'
 app.config['SESSION_COOKIE_NAME'] = 'cookie_session'
-
-from werkzeug.middleware.proxy_fix import ProxyFix
 
 app.wsgi_app = ProxyFix(
     app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
 )
 
-
-# Initialize the AuthDecorator
-auth_decorator = AuthDecorator(desc='DCBC Ergs')
-
 # Change the before_request behaviour to vary per request
 @app.before_request
 def check_authentication():
-    # Skip authentication for certain routes - including coach and data sections
-    if request.path.startswith('/static/') or request.path in ['/coach', '/coach/view', '/favicon.ico', '/webhook']:
+    if request.path.startswith('/static/') or request.path.startswith('/coach') or request.path in ['/favicon.ico', '/webhook']:
         return None  # Do not require a raven login for the above
-    # Otherwise, require a raven login
     return auth_decorator.before_request()
 
-secrets = './.secrets' # API keys, etc.
+@app.context_processor
+def inject_superuser():
+    crsid = auth_decorator.principal  # Get the principal (current user)
+    is_superuser = superuser_check(crsid)  # Check if the user is a superuser
+    return dict(superuser=is_superuser)
 
-if os.path.exists(secrets):
-    with open(secrets, 'rb') as file:
-        secrets_dict = json.load(file)
-else:
-    raise ValueError("secrets file not found!") # will need to manually input the secrets file
+# Load secrets
+secrets = load_secrets()
 
-# Secrets file must contain: (in json format)
-# - passhash: hashed encryption password
-# - api_key : Concept2 logbook API key - from log.concept2.com/developers/keys/
-# - api_id  : API client ID, encrypted with encryption password (as is above)
-# - secret_key: Arbritrary secret key for flask app
+# Set up the authentication
+CLIENT_ID, CLIENT_SECRET, decryptkey, datacipher = setup_auth(secrets)
 
-passhash = secrets_dict.get('passhash')
-
-# Pull in authorised users, and superusers. Each is a simple txt file of crsids, one value per line
-authusers_file = 'data/auth_users.txt'
-
-with open(authusers_file, 'r') as file:
-    authusers = [line.strip() for line in file.readlines()]
-
-superusers_file = 'data/super_users.txt'
-
-with open(superusers_file, 'r') as file:
-    superusers = [line.strip() for line in file.readlines()]
+# Load authorized users and superusers
+authusers_file = 'dcbc/data/auth_users.txt'
+superusers_file = 'dcbc/data/super_users.txt'
+authusers, superusers = load_users(authusers_file, superusers_file)
 
 # Pull in the app secret key
-app.secret_key = secrets_dict.get('secret_key')
-
-# Pulls the decryption key from an environment variable - make sure this is set
-decrypt_pass = os.environ.get('FLASK_APP_PASSWORD')
-
-if decrypt_pass is None:
-    raise ValueError("Environment variable FLASK_APP_PASSWORD is not set") # Will fail if not set!
-
-# Checks the password against the hash value from .secrets
-def derive_key(password: str) -> bytes:
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=b'',  # No salt used
-        iterations=100000,
-    )
-    key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
-    return key
-
-# Derive the key from the password
-decryptkey = derive_key(decrypt_pass)
-datacipher = Fernet(decryptkey)
-
-def create_hash(password):
-    hash_object = hashlib.sha256(password.encode())
-    password_hash = hash_object.hexdigest()
-    return password_hash
-
-if create_hash(decrypt_pass) == passhash:
-    print("Password is correct!")
-else:
-    raise ValueError("Password is incorrect! Aborting!") # Fails to load if the password is wrong
-
-# Decrypts the API key from secrets using the password
-def decrypt_api_key(encrypted_data, password):
-    key = base64.urlsafe_b64encode(hashlib.sha256(password.encode()).digest())
-    fernet = Fernet(key)
-    decrypted_api_key = fernet.decrypt(encrypted_data).decode()
-    return decrypted_api_key
-
-# Loads in the API credentials
-CLIENT_ID = secrets_dict.get('api_id')
-CLIENT_SECRET = decrypt_api_key(secrets_dict.get('api_key'), decrypt_pass)
-
-# Connect to MySQL DB through SQLalchemy
-SQL_PASS = secrets_dict.get('sql_pass')
-
-engine = create_engine(f'mysql+pymysql://wp280:{SQL_PASS}@squirrel/wp280', pool_recycle=3600, poolclass=QueuePool)
-Base.metadata.create_all(engine)
-
-Session = sessionmaker(bind=engine)
-session = scoped_session(Session)
+app.secret_key = secrets.get('secret_key')
 
 # Callback URI after authorization on Concept2
 REDIRECT_URI = 'https://wp280.user.srcf.net/callback'
@@ -237,7 +173,7 @@ def login():
     if crsid not in authusers:
         return(redirect(url_for('sorry'))) # bars non-authorised users from access
 
-    file_path = f'data/{crsid}'
+    file_path = f'dcbc/data/{crsid}'
 
     # Check if the user already exists - which should have created a directory for their data
     if os.path.exists(file_path):
@@ -333,7 +269,7 @@ def setup():
     if crsid not in authusers:
         return(redirect(url_for('sorry'))) # TODO: automate this per request, in before_request?
 
-    file_path = f'./data/{crsid}'
+    file_path = f'dcbc/data/{crsid}'
 
     args = request.args
 
@@ -370,7 +306,7 @@ def setup():
             session.commit()
 
             # Create the personal data folder [ FOR NOW? TODO]
-            userpath = f'./data/{crsid}'
+            userpath = f'dcbc/data/{crsid}'
             if not os.path.exists(userpath):
                 os.makedirs(userpath)
 
@@ -455,8 +391,6 @@ def setup():
 def user_settings():
     crsid = auth_decorator.principal
 
-    superuser = superuser_check(crsid, superusers)
-
     # Check if the user exists in the database
 
     if not session.execute(select(exists().where(User.crsid == crsid))).scalar():
@@ -506,8 +440,6 @@ def user_settings():
 
     return(render_template(
         template_name_or_list='user.html',
-        club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'),
-        authorize = url_for('authorize'), captains = url_for('captains'), superuser=superuser,
         personal_data = personal_data))
 
 @app.route('/home')
@@ -521,7 +453,7 @@ def index():
         user = session.execute(select(User).where(User.crsid == crsid)).scalars().first()
         user_data = {column.name: getattr(user, column.name) for column in User.__table__.columns}
 
-    file_path = f'./data/{crsid}'
+    file_path = f'dcbc/data/{crsid}'
 
     if not os.path.exists(f'{file_path}/token.txt') and user_data.get('logbook') == True:
         return(redirect(url_for('authorize')))
@@ -683,7 +615,7 @@ def callback():
 
     crsid = auth_decorator.principal
 
-    userpath = f'./data/{crsid}'
+    userpath = f'dcbc/data/{crsid}'
     if not os.path.exists(userpath):
         os.makedirs(userpath)
 
@@ -729,7 +661,7 @@ def load_all():
     if 'crsid' in args and crsid in superusers:
         crsid = args.get('crsid')
 
-    file_path = f'./data/{crsid}'
+    file_path = f'dcbc/data/{crsid}'
 
     token_path = f'{file_path}/token.txt'
 
@@ -808,7 +740,6 @@ def load_all():
             data_params = {
             "from": '2000-01-01',
             "to": old_set,
-            "type": "rower",
             }
 
             response = requests.get(data_url, headers=data_headers, params=data_params)
@@ -922,8 +853,6 @@ def plot():
 
     otherview = False
 
-    superuser = superuser_check(usrid, superusers)
-
     if 'crsid' in args and usrid in superusers:
         crsid = args.get('crsid')
         otherview = True
@@ -935,11 +864,11 @@ def plot():
     else:
         crsid = auth_decorator.principal
 
-    file_path = f'./data/{crsid}'
+    file_path = f'dcbc/data/{crsid}'
 
     logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-    query = select(Workout).where(Workout.user_id == logid)
+    query = select(Workout).where(Workout.user_id == logid, Workout.type == "rower")
 
     # Use pandas to read the query result into a DataFrame
     df = pd.read_sql(query, engine)
@@ -1072,7 +1001,7 @@ def plot():
         template_name_or_list='plot.html',
         script=[script1],
         div=[div1],
-        df=df, otherview=otherview, crsid=crsid, superuser=superuser,
+        df=df, otherview=otherview, crsid=crsid,
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
 # Updated to SQL
@@ -1082,9 +1011,7 @@ def data():
 
     args = request.args
 
-    superuser=False
     if superuser_check(crsid, superusers):
-        superuser=True
         if 'crsid' in args:
             crsid = args.get('crsid')
 
@@ -1138,7 +1065,7 @@ def data():
 
     subdf_dict = subdf.to_dict(orient='records')
 
-    return render_template('data.html', data=subdf_dict, crsid=crsid, superuser=superuser,
+    return render_template('data.html', data=subdf_dict, crsid=crsid,
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot'), headers=headers, totaldist=totaldist, totaltime=totaltime)
 
 # Updated to SQL
@@ -1172,7 +1099,7 @@ def workout():
 
     data_url = f"https://log.concept2.com/api/users/{logid}/results/{workoutid}"
 
-    file_path = f'./data/{crsid}'
+    file_path = f'dcbc/data/{crsid}'
 
     token_path = f'{file_path}/token.txt'
 
@@ -1381,7 +1308,7 @@ def club():
     for crsid in crsids:
         logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-        query = select(Workout).where(Workout.user_id == logid)
+        query = select(Workout).where(Workout.user_id == logid, Workout.type == "rower")
 
         userdf = pd.read_sql(query, engine)
 
@@ -1409,7 +1336,7 @@ def club():
         template_name_or_list='club.html',
         script='',
         div=['<p>No user data found! Make sure some data exists. </p>'], totaldist = 0, totaltime = 0,
-        clubdf = [], superuser = superuser_check(auth_decorator.principal, superusers),
+        clubdf = [],
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
     p1 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime')
@@ -1452,7 +1379,7 @@ def club():
         template_name_or_list='club.html',
         script=[script1],
         div=[div1], totaldist = totaldist, totaltime = totaltime,
-        clubdf = clubdf, superuser = superuser_check(auth_decorator.principal, superusers),
+        clubdf = clubdf,
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
 @app.route('/forbidden')
@@ -1483,7 +1410,7 @@ def forbidden():
 def pbs():
     crsid = auth_decorator.principal
 
-    file_path = f'./data/{crsid}'
+    file_path = f'dcbc/data/{crsid}'
 
     logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
@@ -1586,8 +1513,8 @@ def pbs():
 
 @app.route('/coach')
 def coach():
-    coach_file = './data/coaches.txt'
-    approved_file = './data/approved_coaches.txt'
+    coach_file = 'dcbc/data/coaches.txt'
+    approved_file = 'dcbc/data/approved_coaches.txt'
 
     args = request.args
     username = None
@@ -1772,7 +1699,7 @@ def coachview():
             template_name_or_list='club.html',
             script='',
             div=['<p>No user data found! Make sure some data exists. </p>'], totaldist = 0, totaltime = 0,
-            clubdf = [], superuser = superuser_check(auth_decorator.principal, superusers),
+            clubdf = [],
             club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
         p1 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime')
@@ -1815,50 +1742,8 @@ def coachview():
             template_name_or_list='coach.html',
             script=[script1],
             div=[div1], totaldist = totaldist, totaltime = totaltime,
-            clubdf = clubdf, superuser = superuser_check(auth_decorator.principal, superusers),
+            clubdf = clubdf,
             club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
-
-@app.route('/captains', methods=['GET', 'POST'])
-def captains():
-    crsid = auth_decorator.principal
-    users = session.execute(select(User)).scalars().all()
-
-    def format_tags(tags):
-        if tags:
-            return tags.replace(',', ' ').replace(' ', '-').lower()
-        return ''
-
-    app.jinja_env.filters['format_tags'] = format_tags
-
-    if crsid not in superusers:
-        return redirect(url_for('forbidden', ref='captains'))
-
-    if request.method == 'POST':
-        # Retrieve all user CRSID values
-        user_crsids = [user.crsid for user in session.execute(select(User)).scalars().all()]
-
-        # Process tag updates
-        for crsid in user_crsids:
-            tags = request.form.getlist(f'tag_{crsid}[]')
-            tags = [tag for tag in tags if tag.strip()]
-            # Update the User table with the new tag values
-            session.execute(
-                update(User)
-                .where(User.crsid == crsid)
-                .values(tags=','.join(tags))
-            )
-        session.commit()
-        return redirect(url_for('captains'))
-
-    unique_tags = set()
-    for user in users:
-        if user.tags:
-            tags = user.tags.split(',')
-            for tag in tags:
-                unique_tags.add(tag.strip())
-
-    return(render_template(users=users,unique_tags=sorted(unique_tags),
-            template_name_or_list='captains.html'))
 
 
 @app.route('/commit_crews', methods=['POST'])
@@ -1876,7 +1761,7 @@ def commit_crews():
                 user.tags = ','.join(updated_tags)
                 session.commit()
 
-    return redirect(url_for('captains'))
+    return redirect(url_for('captains.home'))
 
 hours_of_day = range(6, 18)  # 6:00 to 17:00 (9 AM to 5 PM)
 
@@ -1884,8 +1769,6 @@ hours_of_day = range(6, 18)  # 6:00 to 17:00 (9 AM to 5 PM)
 @app.route('/availability', methods=['GET', 'POST'])
 def set_availabilities():
     crsid = auth_decorator.principal
-
-    superuser = superuser_check(crsid, superusers)
 
     username = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
 
@@ -1932,13 +1815,35 @@ def set_availabilities():
 
     existingData, raceDays, eventDays, userNotes = load_user_data(crsid)
 
+    user_tags = set(session.execute(select(User.tags).where(User.crsid == crsid)).scalars().first().split(','))
+
+    if 'Captains' not in user_tags:
+        remove_races = []
+
+        for race_date, race_name in raceDays.items():
+            race_tags = set(session.execute(select(Event.crews).where(Event.name == race_name)).scalars().first().split(','))
+            if not user_tags.intersection(race_tags):
+                remove_races.append(race_date)
+
+        for race_date in remove_races:
+            del raceDays[race_date]
+
+        remove_events = []
+
+        for event_date, event_name in eventDays.items():
+            event_tags = set(session.execute(select(Event.crews).where(Event.name == event_name)).scalars().first().split(','))
+            if not user_tags.intersection(event_tags):
+                remove_events.append(event_date)
+
+        for event_date in remove_events:
+            del eventDays[event_date]
+
     context = {
         'existingData': existingData,
         'crsid': crsid,
         'username': username,
         'hours_of_day': hours_of_day,
         'existing': True,
-        'superuser': superuser,
         'race_days': raceDays,
         'event_days': eventDays,
         'user_notes': userNotes
@@ -2024,8 +1929,6 @@ def submit_availability():
 def planner():
     crsid = auth_decorator.principal
 
-    superuser = superuser_check(crsid, superusers)
-
     try:
         df = pd.read_json('availability.json', orient='records')
     except (ValueError, FileNotFoundError) as e:
@@ -2039,7 +1942,7 @@ def planner():
     datadict = df.to_dict(orient='records')
 
     return render_template('planner.html', availabilities=datadict,
-                           days_of_week=days_of_week, hours_of_day=hours_of_day, superuser=superuser)
+                           days_of_week=days_of_week, hours_of_day=hours_of_day)
 
 # Needs updating for new availabilities system
 @app.route('/delete_user', methods=['GET', 'POST'])
@@ -2062,7 +1965,7 @@ def delete_user():
             return(redirect(url_for("index")))
 
         try:
-            shutil.rmtree(f'./data/{delid}')
+            shutil.rmtree(f'dcbc/data/{delid}')
         except:
             pass
 
@@ -2091,190 +1994,6 @@ def delete_user():
                 <button type="submit">Confirm</button>
             </form>
     ''', delid=delid)
-
-@app.route('/captains/races', methods=['GET', 'POST'])
-def set_races():
-    crsid = auth_decorator.principal
-
-    if crsid not in superusers:
-        return redirect(url_for('forbidden', ref='captains'))
-
-    if request.method == 'POST':
-        crews = request.form.getlist(f'boat_[]')
-        crews = [crew for crew in crews if crew.strip()] # will need better handling!
-
-        add_event = {
-            'name': request.form.get('name'),
-            'date': request.form.get('date'),
-            'type': request.form.get('type'),
-            'crews': ','.join(crews)
-        }
-
-        new_event = Event(**add_event)
-        session.merge(new_event)
-
-        if request.form.get('type') == 'Race':
-            into_date = Daily(date = request.form.get('date'), races = request.form.get('name'))
-        else:
-            into_date = Daily(date = request.form.get('date'), events = request.form.get('name'))
-
-        session.merge(into_date)
-        # Commit all inserts to the database
-        session.commit()
-
-    rows = session.execute(select(Event).order_by(asc(Event.date))).scalars().all()
-
-    races_events = []
-
-    for row in rows:
-        races_events.append({
-                'name': row.name,
-                'date': row.date,
-                'type': row.type,
-                'crews': row.crews.split(',') if row.crews else []
-            })
-
-    return(render_template('races.html', races_events = races_events))
-
-# boat builder!
-@app.route('/captains/boats', methods=['GET', 'POST'])
-def set_boats():
-    crsid = auth_decorator.principal
-
-    if crsid not in superusers:
-        return redirect(url_for('forbidden', ref='captains'))
-
-    boats = session.execute(select(Boat)).scalars().all()
-
-    if request.method == 'POST' :
-        merge_boats = {
-                        'name': request.get_json().get('boat'),
-                        'active': request.get_json().get('status') == 'True'
-                        }
-        merged_boats = Boat(**merge_boats)
-        session.merge(merged_boats)
-        session.commit()
-
-    boats_list = []
-
-    for row in boats:
-        boats_list.append({
-                'name': row.name,
-                'tags': row.tags.split(',') if row.tags else [],
-                'shell': row.shell,
-                'active': row.active if row.active is not None else False,
-            })
-
-    return(render_template('boats.html', boats_list = boats_list))
-
-@app.route('/captains/boats/edit', methods=['GET', 'POST'])
-def edit_boat():
-    crsid = auth_decorator.principal
-
-    if crsid not in superusers:
-        return redirect(url_for('forbidden', ref='captains'))
-
-    if request.method == 'POST':
-        # Handle the positions
-        max_positions = ['cox', 'stroke', 'seven', 'six', 'five', 'four', 'three', 'two', 'bow']
-
-        id_layout = {}
-
-        given_boat = request.form.get('boat_name')
-
-        # Remove all instances of the boat passed from user boats field
-        for user, user_boats in {str(user.crsid): (user.boats.split(',') if user.boats else [])
-                                 for user in session.execute(select(User)).scalars().all()}.items():
-            if given_boat in user_boats:
-                user_boats.remove(given_boat)
-
-                merge_boats = {
-                                'crsid': user,
-                                'boats': ','.join(user_boats) if user_boats is not [] else None
-                                }
-                merged_boats = User(**merge_boats)
-                session.merge(merged_boats)
-
-        session.commit()
-
-        # Add the boat name back into the passed users
-        for position in max_positions:
-            if f'side-{position}' in request.form:
-                _side_ = request.form.get(f'side-{position}')
-                id_layout.update({position: _side_})
-
-            if f'seat-{position}' in request.form:
-                seat_crsid = request.form.get(f'seat-{position}')
-                exist_boats = session.execute(select(User.boats).where(User.crsid == seat_crsid)).scalar()
-
-                exist_boats = exist_boats.split(',') if exist_boats is not None else []
-
-                if given_boat not in exist_boats:
-                    exist_boats.append(given_boat)
-
-                    merge_boats = {
-                                    'crsid': seat_crsid,
-                                    'boats': ','.join(exist_boats)
-                                    }
-                    merged_boats = User(**merge_boats)
-                    session.merge(merged_boats)
-
-        boat_info = {
-                'name': request.form.get('boat_name'),
-                'crew_type': request.form.get('boat_type'),
-                'shell': request.form.get('boat_shell'),
-                'cox': request.form.get('seat-cox') if 'seat-cox' in request.form else None,
-                'stroke': request.form.get('seat-stroke') if 'seat-stroke' in request.form else None,
-                'seven': request.form.get('seat-seven') if 'seat-seven' in request.form else None,
-                'six': request.form.get('seat-six') if 'seat-six' in request.form else None,
-                'five': request.form.get('seat-five') if 'seat-five' in request.form else None,
-                'four': request.form.get('seat-four') if 'seat-four' in request.form else None,
-                'three': request.form.get('seat-three') if 'seat-three' in request.form else None,
-                'two': request.form.get('seat-two') if 'seat-two' in request.form else None,
-                'bow': request.form.get('seat-bow') if 'seat-bow' in request.form else None,
-                'layout': json.dumps(id_layout),
-            }
-
-        new_boat = Boat(**boat_info)
-
-        # Add (safely) to session
-        session.merge(new_boat)
-
-        # Commit all inserts to the database
-        session.commit()
-
-        return(redirect(url_for('set_boats')))
-
-    if 'boat' in request.args:
-        boat_name = request.args.get('boat')
-
-        if boat_name != 'new':
-            boats = session.execute(select(Boat).where(Boat.name == boat_name)).scalars().all()
-
-            boats_list = {}
-
-            for row in boats:
-                boats_list.update({
-                        'name': row.name,
-                        'cox': row.cox if row.cox else None,
-                        'stroke': row.stroke if row.stroke else None,
-                        'seven': row.seven if row.seven else None,
-                        'six': row.six if row.six else None,
-                        'five': row.five if row.five else None,
-                        'four': row.four if row.four else None,
-                        'three': row.three if row.three else None,
-                        'two': row.two if row.two else None,
-                        'bow': row.bow if row.bow else None,
-                        'tags': row.tags.split(',') if row.tags else [],
-                        'crew_type': row.crew_type if row.crew_type else None,
-                        'shell': row.shell if row.shell else None,
-                    })
-        else:
-            boats_list = {'name': 'new',}
-
-    user_crsids = {str(user.crsid):str(user.preferred_name+' '+user.last_name) for user in session.execute(select(User)).scalars().all()}
-
-    return(render_template('editboat.html', boats_list = boats_list, user_list = user_crsids)) # temp
 
 @app.route('/races')
 def view_races():
@@ -2313,221 +2032,6 @@ def view_boat():
     user_crsids = {str(user.crsid):str(user.preferred_name+' '+user.last_name) for user in session.execute(select(User)).scalars().all()}
 
     return(render_template('viewboat.html', boats_list = boats_list, user_list = user_crsids)) # temp
-
-@app.route('/captains/outings')
-def set_outings():
-    crsid = auth_decorator.principal
-
-    if crsid not in superusers:
-        return redirect(url_for('forbidden', ref='captains'))
-
-    if 'from' not in request.args:
-        from_date = datetime.today().date()
-    else:
-        from_date = request.args.get('from')
-
-    if 'to' not in request.args:
-        to_date = datetime.today().date() + timedelta(days=7)
-    else:
-        to_date = request.args.get('to')
-
-    next_outings = session.execute(
-            select(Outing).where(
-                    and_(
-                            Outing.date_time >= from_date,
-                            Outing.date_time < to_date
-                        )
-                )
-        ).scalars().all()
-
-    print(next_outings)
-
-    return render_template('setoutings.html', outings = next_outings, from_date = from_date, to_date = to_date)
-
-@app.route('/captains/outings/edit', methods=['GET', 'POST'])
-def edit_outing():
-    crsid = auth_decorator.principal
-
-    if crsid not in superusers:
-        return redirect(url_for('forbidden', ref='captains'))
-
-    if request.method == 'POST':
-        # Handle POST request for editing or creating an outing
-        outing_data = request.form  # Assuming you're sending JSON data
-
-        print(outing_data)
-
-        new_outing = {
-                'date_time': datetime.strptime(f"{outing_data.get('date')} {outing_data.get('time')}", "%Y-%m-%d %H:%M"),
-                'boat_name': outing_data.get('boat_id'),
-                'set_crew': {}, # Used to populate the crew list, for non-user subs
-                'shell': outing_data.get('shell'),
-                'subs': [], # Used to put into outings for the subs
-                'coach': outing_data.get('coach'),
-                'time_type': outing_data.get('timeType')
-            }
-
-        # Iterate over the form data to process 'sub-' entries
-        for key, value in outing_data.items():
-            if key.startswith('sub-'):
-                # Extract the parts after the hyphens
-                parts = key.split('-')
-                usr_key = parts[1] if len(parts) > 1 else None
-                sub_key = parts[2] if len(parts) > 2 else None
-
-                # Populate the set_crew dictionary
-                if usr_key:
-                    new_outing['set_crew'][usr_key] = value
-
-                # Add sub_key to subs list if it's not empty
-                if sub_key:
-                    new_outing['subs'].append(sub_key)
-
-        # Convert subs list to a comma-separated string if there are any subs
-        if new_outing['subs']:
-            new_outing['subs'] = ','.join(new_outing['subs'])
-        else:
-            new_outing['subs'] = None  # Ensure subs is None if empty
-
-        if new_outing['set_crew']:
-            new_outing['set_crew'] = json.dumps(new_outing['set_crew'])
-        else:
-            new_outing['set_crew'] = None  # Ensure set_crew is None if empty
-
-
-        add_outing = Outing(**new_outing)
-
-        session.merge(add_outing)
-        session.commit()
-
-        print(new_outing)
-
-        # Here you would process the incoming data, e.g., save to database
-        # Example:
-        # outing = Outing(boat_id=outing_data['boat_id'], ...)
-        # session.add(outing)
-        # session.commit()
-
-        return ("Success!"), 201
-
-    args = request.args
-
-    if 'outing' not in args or args.get('outing') is None:
-        return redirect(url_for("edit_outing", outing="new"))
-
-    if args.get('outing') == 'new':
-        boat_options = [row[0] for row in session.execute(
-            select(Boat.name).where(Boat.active == True)).fetchall()]
-
-        return render_template('editouting.html', boat_options=boat_options)
-
-    # Handle case where outing is being edited
-    outing_id = args.get('outing')
-    outing = session.execute(select(Outing).where(id=outing_id)).first()
-
-    if outing:
-        boat_options = [row[0] for row in session.execute(
-            select(Boat.name).where(Boat.active == True)).fetchall()]
-
-        return render_template('editouting.html', boat_options=boat_options, outing=outing)
-
-    return "Outing not found", 404
-
-# Needs updating at very least
-@app.route('/captains/availability', methods=['GET', 'POST'])
-def inspect_availability():
-    crsid = auth_decorator.principal
-
-    if crsid not in superusers:
-        return redirect(url_for('forbidden', ref='captains'))
-
-    crsid = request.args.get('crsid')
-
-    superuser = superuser_check(crsid, superusers)
-
-    username = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
-
-    # Export data from SQL into a format comprehensible by html-side JS interpreter
-    def load_user_data(crsid):
-        # Fetch all rows for the given crsid
-        rows = session.execute(select(Daily)).scalars().all()
-
-        # Initialize the dictionary
-        state_dates = {}
-        race_dates = {}
-        event_dates = {}
-        notes = {}
-
-        # Process each row
-        for row in rows:
-            date_str = row.date.strftime('%Y%m%d')  # Format date as YYYYMMDD
-            races = row.races
-            events = row.events
-
-            if races:
-                race_dates[date_str] = races
-
-            if events:
-                event_dates[date_str] = events
-
-            user_data = json.loads(row.user_data) if row.user_data else {}
-
-            # Check if the crsid is in user_data
-            if crsid in user_data:
-                state = user_data[crsid]['state']
-                note = user_data[crsid]['notes']
-
-                notes[date_str] = note
-
-                # Initialize list for state if not already present
-                if state not in state_dates:
-                    state_dates[state] = []
-
-                # Add the date to the list for the specific state
-                state_dates[state].append(date_str)
-
-        return state_dates, race_dates, event_dates, notes
-
-    existingData, raceDays, eventDays, userNotes = load_user_data(crsid)
-
-    context = {
-        'existingData': existingData,
-        'crsid': crsid,
-        'username': username,
-        'hours_of_day': hours_of_day,
-        'existing': True,
-        'superuser': superuser,
-        'race_days': raceDays,
-        'event_days': eventDays,
-        'user_notes': userNotes
-    }
-
-    now = datetime.now()
-    year = now.year
-    month = now.month
-    current_month = int(month)
-
-    selected_month = request.form.get('month', now.month)
-
-    if 'refmonth' in request.args:
-        selected_month=request.args.get('refmonth')
-
-    # Convert the selected month to an integer
-    selected_month = int(selected_month)
-
-    # Get days in the month
-    # Get days of the week (short format like "Mon", "Tue", etc.)
-    days_of_week = calendar.weekheader(3).split()
-
-    # Get a matrix where each list represents a week, and days outside the month are zero
-    month_weeks = calendar.monthcalendar(year, selected_month)
-
-    months = [(m, calendar.month_name[m]) for m in range(current_month, 13)]
-
-    return render_template('calendar.html', **context, days_of_week=days_of_week,
-                           month_weeks=month_weeks, months=months,
-                           year=year,
-                           month=selected_month)
 
 @app.route('/get_boat_info', methods=['POST'])
 def get_boat_info():
@@ -2599,10 +2103,6 @@ def find_crsid():
         return jsonify({'crsid': user.crsid})
     else:
         return jsonify({'error': 'CRSID not found'}), 404
-
-@app.route('/captains/availability/view')
-def view_availability():
-    return("NOT IMPLEMENTED!")
 
 @app.route('/outing')
 def view_outing():
@@ -2687,7 +2187,8 @@ def outings():
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
         "coach": outing.coach if outing.coach else 'No Coach',
-        "time_type": outing.time_type if outing.time_type else 'ATBH'
+        "time_type": outing.time_type if outing.time_type else 'ATBH',
+        'notes': outing.notes if outing.notes else None
     } for outing in your_outings]
 
     sub_outings = [{
@@ -2695,7 +2196,8 @@ def outings():
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
         "coach": outing.coach if outing.coach else 'No Coach',
-        "time_type": outing.time_type if outing.time_type else 'ATBH'
+        "time_type": outing.time_type if outing.time_type else 'ATBH',
+        'notes': outing.notes if outing.notes else None
     } for outing in sub_outings]
 
     other_outings = [{
@@ -2703,16 +2205,77 @@ def outings():
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
         "coach": outing.coach if outing.coach else 'No Coach',
-        "time_type": outing.time_type if outing.time_type else 'ATBH'
+        "time_type": outing.time_type if outing.time_type else 'ATBH',
+        'notes': outing.notes if outing.notes else None
     } for outing in other_outings]
 
-    return(render_template("outings.html", fromDate = from_date, toDate = to_date, crsid=crsid, user_outings = your_outings, other_outings=other_outings, sub_outings= sub_outings))
+    races_events = session.execute(select(Event).where(
+            and_(
+                    Event.date >= from_date,
+                    Event.date <= to_date
+                )
+        ).order_by(Event.date.asc())).scalars().all()
 
-def superuser_check(crsid, superusers):
-    if crsid in superusers:
-        return True
+    races_events = [{
+        "name": race_event.name,
+        "date": race_event.date,
+        "crews": race_event.crews,
+        "type": race_event.type
+    } for race_event in races_events]
+
+    print(races_events)
+
+    return(render_template("outings.html", fromDate = from_date, toDate = to_date, crsid=crsid, user_outings = your_outings, other_outings=other_outings, sub_outings= sub_outings, races = races_events))
+
+
+@app.route('/coach/outings', methods=['GET', 'POST'])
+def coach_outings():
+
+    if 'weekof' in request.args:
+
+        week_date = datetime.strptime(request.args.get('weekof'), '%Y-%m-%d').date()
+        from_date = datetime.combine(week_date - timedelta(days=week_date.weekday()), datetime.min.time())
+
+        # Calculate the end of the week (Sunday) at 23:59:59
+        to_date = datetime.combine(from_date + timedelta(days=6), datetime.max.time())
+
+
     else:
-        return False
+        # Get today's date
+        today = datetime.today()
+
+        # Calculate the start of the week (Monday)
+        from_date = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
+
+        # Calculate the end of the week (Sunday)
+        to_date = datetime.combine(from_date + timedelta(days=6), datetime.max.time())
+
+
+    all_outings = session.execute(
+        select(Outing).where(
+            and_(
+                Outing.date_time >= from_date,
+                Outing.date_time <= to_date
+            )
+        ).order_by(Outing.date_time.asc())
+    ).scalars().all()
+
+    sub_outings = []
+
+    other_outings = []
+
+    all_outings = [{
+        "date_time": outing.date_time.isoformat(),
+        "boat_name": outing.boat_name,
+        "set_crew": outing.set_crew,
+        "coach": outing.coach if outing.coach else 'No Coach',
+        "time_type": outing.time_type if outing.time_type else 'ATBH',
+        'notes': outing.notes if outing.notes else None
+    } for outing in all_outings]
+
+
+    return(render_template("coachoutings.html", fromDate = from_date, toDate = to_date, user_outings = all_outings, other_outings=other_outings, sub_outings= sub_outings))
+
 
 def format_seconds(seconds):
     # Calculate minutes, seconds, and tenths of seconds

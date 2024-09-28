@@ -24,7 +24,7 @@
 
 </style>
 
-<form method="POST" id="submitOuting" action="/captains/outings/edit">
+<form method="POST" id="submitOuting" action="{{ url_for('captains.edit_outing') }}">
 <div class="container-fluid mt-4">
     <h3> Build an Outing </h3>
     <div class="row px-5 py-2">
@@ -50,10 +50,12 @@
             <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
                 <h3> Coach </h3>
                 <input type="text" class="form-control" id="coachInput" placeholder="Who is coaching?" name="coach"></input>
-            </div>
-            <div class="row border rounded mb-3 p-4 boatInfoDiv" style="display: none;">
+
                 <h3> Shell </h3>
                 <input class="form-control" id="shellField" name="shell" required/>
+
+                <h3> Notes </h3>
+                <input class="form-control" id="notesField" name="notes" placeholder="Notes..."/>
             </div>
         </div>
 
