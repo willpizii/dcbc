@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container py-4">
+    <div class="row px-5 py-4">
+
+        <div class="col mx-2">
+            <div class="row border rounded mb-3 p-4">
+                <h2> <span style="color: #bb0088;">{{ outing.date_time.strftime('%Y-%m-%d') }}</span> <strong>{{outing.date_time.strftime('%H:%M')}} {{outing.time_type}}</strong> </h2>
+            </div>
+
+            <div class="row border rounded mb-3 p-4">
+                <table>
+                    <tr><th>Boat</th><td>{{outing.shell}}</td></tr>
+                    <tr><th>Coach</th><td>{{outing.coach if outing.coach else 'No coach'}}</td></tr>
+                    {% if outing.notes %}<tr><th>Coach</th><td>{{outing.notes}}</td></tr>{% endif %}
+                </table>
+            </div>
+        </div>
+
+        <div class="col mx-2">
+            <div class="row border rounded mb-3 p-4">
+                <table class="table table-striped">
+                    <thead><tr>
+                        <th>Seat</th>
+                        <th>Rower</th>
+                        {% if subs %} <th>Sub</th> {% endif %}
+                    </tr></thead>
+                    <tbody>
+                        {% for seat, rower in crew.items() %}
+                        <tr>
+                            <td>{{ seat }}</td>
+                            <td>
+                                {% if subs and subs[seat] %}
+                                    <span style="text-decoration: line-through;">{{ rower }}</span>
+                                {% else %}
+                                    {{ rower }}
+                                {% endif %}
+                            </td>
+                            {% if subs %}
+                                <td>{{ subs[seat] }}</td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock content %}

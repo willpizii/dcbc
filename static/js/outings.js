@@ -125,7 +125,7 @@ dayNames.forEach((day, index) => {
 
                 // Create content for the outing with icons and table for data
                 cardBody.innerHTML = `
-                    <h4 class="card-header" style="${headerStyle}">${new Date(outing.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${outing.time_type}</h4>
+                    <a href="/outing?id=${outing.outing_id}" style="text-decoration: none; color: inherit;"><h4 class="card-header" style="${headerStyle}">${new Date(outing.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${outing.time_type}</h4></a>
                     <div class="card-body">
                         <table style="width: 100%; border-collapse: collapse; text-align: left;">
                             <tr><td><strong>Crew:</strong></td><td>${outing.boat_name}</td></tr>

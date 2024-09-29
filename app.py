@@ -66,6 +66,9 @@ class R(flask.Request):
 app = Flask(__name__)
 app.request_class = R
 
+Base.metadata.create_all(engine)
+session.commit()
+
 # Comment these for live deployment
 app.register_blueprint(captains_bp)
 app.register_blueprint(coach_bp)
@@ -1874,7 +1877,47 @@ def find_crsid():
 
 @app.route('/outing')
 def view_outing():
-    return("NOT IMPLEMENTED!")
+
+    out_id = request.args.get('id')
+
+    if not out_id:
+        return(redirect(url_for('home')))
+
+    outing_info = session.execute(select(Outing).where(Outing.outing_id == out_id)).scalars().first()
+
+    outing_crew = session.execute(select(Boat).where(Boat.name == outing_info.boat_name)).scalars().first()
+
+    pos_seats = ['cox', 'stroke', 'seven', 'six', 'five', 'four', 'three', 'two', 'bow']
+
+    crew_dict = {pos: getattr(outing_crew, pos) for pos in pos_seats if getattr(outing_crew, pos) is not None}
+
+    if outing_info.set_crew is not None:
+        to_sub = json.loads(outing_info.set_crew)
+
+        subs_dict = {}
+
+        for subbed, sub in to_sub.items():
+            matched_seat = next((k for k, v in crew_dict.items() if v == subbed), None)
+
+            if matched_seat:
+                subs_dict[matched_seat] = sub
+
+        print(to_sub, subs_dict)
+
+    else:
+        subs_dict = None
+
+    for seat, rower in crew_dict.items():
+        # Retrieve the user associated with the rower
+        user = session.execute(select(User).where(User.crsid == rower)).scalars().first()
+
+        # If user exists, update the seat with their formatted name
+        if user:
+            crew_dict[seat] = f"{user.preferred_name} {user.last_name}"
+
+    print(outing_crew.shell, crew_dict)
+
+    return(render_template("outing.html", outing = outing_info, crew = crew_dict, subs = subs_dict))
 
 @app.route('/outings', methods=['GET', 'POST'])
 def outings():
@@ -1905,12 +1948,15 @@ def outings():
     # Safely handle the case where the result is None
     boats = result.split(",") if result else []
 
+    user_name = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
+
     your_outings = session.execute(
         select(Outing).where(
             and_(
                 Outing.date_time >= from_date,
                 Outing.date_time <= to_date,
-                Outing.boat_name.in_(boats),
+                or_(Outing.boat_name.in_(boats),
+                    Outing.coach == user_name)
             )
         ).order_by(Outing.date_time.asc())
     ).scalars().all()
@@ -1930,7 +1976,8 @@ def outings():
             and_(
                 Outing.date_time >= from_date,
                 Outing.date_time <= to_date,
-                not_(Outing.boat_name.in_(boats))
+                ~or_(Outing.boat_name.in_(boats),
+                     Outing.coach == user_name)
             )
         ).order_by(Outing.date_time.asc())
     ).scalars().all()
@@ -1951,6 +1998,7 @@ def outings():
     ]
 
     your_outings = [{
+        "outing_id": outing.outing_id,
         "date_time": outing.date_time.isoformat(),
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
@@ -1960,6 +2008,7 @@ def outings():
     } for outing in your_outings]
 
     sub_outings = [{
+        "outing_id": outing.outing_id,
         "date_time": outing.date_time.isoformat(),
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
@@ -1969,6 +2018,7 @@ def outings():
     } for outing in sub_outings]
 
     other_outings = [{
+        "outing_id": outing.outing_id,
         "date_time": outing.date_time.isoformat(),
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,

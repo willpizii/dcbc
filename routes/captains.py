@@ -152,6 +152,30 @@ def availability():
 def races():
 
     if request.method == 'POST':
+
+        # Handle delete event
+        if 'delete_event' in request.form:
+            event_name_to_delete = request.form.get('delete_event')
+            event_to_delete = session.execute(select(Event).filter(Event.event_id == event_name_to_delete)).scalar_one_or_none()
+            if event_to_delete:
+                # Remove the corresponding Daily entry
+                daily_entry = session.execute(
+                    select(Daily).filter(Daily.date == event_to_delete.date)
+                ).scalar_one_or_none()
+
+                if daily_entry:
+                    # Assuming you want to clear the entry based on the event type
+                    if event_to_delete.type == 'Race':
+                        daily_entry.races = None  # or daily_entry.races.remove(event_to_delete.name) if you want to keep other races
+                    else:
+                        daily_entry.events = None  # or daily_entry.events.remove(event_to_delete.name)
+
+                    session.merge(daily_entry)
+
+                session.delete(event_to_delete)
+                session.commit()
+            return redirect('/captains/races')  # Redirect to refresh the page
+
         crews = request.form.getlist(f'boat_[]')
         crews = [crew for crew in crews if crew.strip()] # will need better handling!
 
@@ -162,8 +186,36 @@ def races():
             'crews': ','.join(crews)
         }
 
-        new_event = Event(**add_event)
-        session.merge(new_event)
+        event_id = request.form.get('event_id')  # This will be None if creating a new event
+
+        if event_id:  # Editing an existing event
+            existing_event = session.execute(
+                select(Event).where(Event.event_id == event_id)
+            ).scalar_one_or_none()
+
+            if existing_event:
+                # If the event exists, find the related Daily entry
+                daily_entry = session.execute(
+                    select(Daily).where(Daily.date == existing_event.date)
+                ).scalars().first()
+
+                # Clear the date in Daily if it is changing
+                if existing_event.date != add_event['date'] and daily_entry:
+                    if existing_event.type == 'Race':
+                        daily_entry.races = None  # Clear the races field
+                    else:
+                        daily_entry.events = None  # Clear the events field
+                    session.merge(daily_entry)
+
+                # Update the existing event's details
+                existing_event.date = add_event['date']
+                existing_event.type = add_event['type']
+                existing_event.crews = ','.join(crews)  # Update crews
+                session.merge(existing_event)
+
+        else:  # Creating a new event
+            new_event = Event(**add_event)
+            session.merge(new_event)
 
         if request.form.get('type') == 'Race':
             into_date = Daily(date = request.form.get('date'), races = request.form.get('name'))
@@ -180,11 +232,12 @@ def races():
 
     for row in rows:
         races_events.append({
-                'name': row.name,
-                'date': row.date,
-                'type': row.type,
-                'crews': row.crews.split(',') if row.crews else []
-            })
+            'name': row.name,
+            'date': row.date,
+            'type': row.type,
+            'crews': row.crews.split(',') if row.crews else [],
+            'event_id': row.event_id  # Include event_id for deletion and editing
+        })
 
     return(render_template('races.html', races_events = races_events))
 

@@ -277,7 +277,9 @@ def view():
             clubdf = [],
             club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
-        p1 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime')
+        p1 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime', tools='pan,box_zoom,wheel_zoom,reset,save', active_scroll='wheel_zoom')
+
+        p1.toolbar.logo = None
 
         for crsid in crsids:
             if f'{crsid}_date' not in clubdf:

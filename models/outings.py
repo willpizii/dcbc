@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Text, Boolean, DateTime, JSON
+from sqlalchemy import Column, String, Text, Boolean, DateTime, JSON, Integer
 from dcbc.models.base import Base  # Import the shared Base
 
 # Define the table structure with only the required columns
@@ -19,3 +19,6 @@ class Outing(Base):
 
     time_type = Column(String(255))
     notes = Column(Text)
+
+    plan = Column(Text)
+    distance = Column(Integer)

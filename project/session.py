@@ -3,6 +3,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
 import json
 import os
+from dcbc.models.base import Base
 
 # Load secrets from your `.secrets` file
 secrets = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.secrets')
