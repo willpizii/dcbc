@@ -484,6 +484,8 @@ def index():
     if boats:
         boat_columns = inspect(Boat).columns.keys()
         for boat in boats:
+            if boat in ['', None]:
+                continue
             boat_row = session.execute(select(Boat).where(Boat.name == boat)).scalar()
             if boat_row.active:
                 for column in boat_columns:
@@ -756,10 +758,6 @@ def load_all():
 
             this_json = dataresponse.get('data')
             data_json += this_json
-
-    # SQL Version!
-
-    from models.workout import Workout, Base
 
     allowed_keys = {'id', 'user_id', 'date', 'distance', 'type', 'time', 'comments', 'heart_rate', 'stroke_rate', 'stroke_data'}
 
@@ -1586,9 +1584,11 @@ def set_availabilities():
 
     existingData, raceDays, eventDays, userNotes = load_user_data(crsid)
 
-    user_tags = set(session.execute(select(User.tags).where(User.crsid == crsid)).scalars().first().split(','))
+    user_tags = session.execute(select(User.tags).where(User.crsid == crsid)).scalars().first()
 
-    if 'Captains' not in user_tags:
+    user_tags = set() if user_tags is None else set(user_tags.split(','))
+
+    if user_tags and not {'Captains', 'Coaches'}.intersection(user_tags):
         remove_races = []
 
         for race_date, race_name in raceDays.items():
@@ -1840,12 +1840,20 @@ def check_availability():
 
     result = session.execute(select(Daily).where(Daily.date == selected_date)).first()
 
+    lighting = pd.read_csv('dcbc/data/lightings.csv')
+
+    lighting['Date'] = pd.to_datetime(lighting['Date'], format='%Y%m%d')
+
+    lighting_up = lighting[lighting['Date'] == selected_date]['Friendly_Up'].iat[0]
+    lighting_down = lighting[lighting['Date'] == selected_date]['Friendly_Down'].iat[0]
+
     if result:
         daily_record = result[0]  # Extract the Daily object from the result
         response_data = {
             'date': daily_record.date,
-            'user_data': daily_record.user_data,  # Example field
-            # Add other relevant fields
+            'user_data': daily_record.user_data,
+            'lighting_down': str(lighting_down), # Pass lighting times too
+            'lighting_up': str(lighting_up)
         }
         return jsonify(response_data)  # Print the resulting row to the console
     else:
@@ -1907,6 +1915,17 @@ def view_outing():
     else:
         subs_dict = None
 
+    outing_date = outing_info.date_time.date().strftime('%Y%m%d')
+
+    lighting = pd.read_csv('dcbc/data/lightings.csv')
+
+    lighting['Date'] = pd.to_datetime(lighting['Date'], format='%Y%m%d')
+
+    filtered_lighting = lighting[lighting['Date'] == outing_date]
+
+    lighting_up = filtered_lighting['Friendly_Up'].iat[0] if not filtered_lighting.empty else None
+    lighting_down = filtered_lighting['Friendly_Down'].iat[0] if not filtered_lighting.empty else None
+
     for seat, rower in crew_dict.items():
         # Retrieve the user associated with the rower
         user = session.execute(select(User).where(User.crsid == rower)).scalars().first()
@@ -1917,7 +1936,7 @@ def view_outing():
 
     print(outing_crew.shell, crew_dict)
 
-    return(render_template("outing.html", outing = outing_info, crew = crew_dict, subs = subs_dict))
+    return(render_template("outing.html", outing = outing_info, crew = crew_dict, subs = subs_dict, lup = lighting_up, ldown = lighting_down))
 
 @app.route('/outings', methods=['GET', 'POST'])
 def outings():
@@ -2041,9 +2060,15 @@ def outings():
         "type": race_event.type
     } for race_event in races_events]
 
-    print(races_events)
+    lighting = pd.read_csv('dcbc/data/lightings.csv')
 
-    return(render_template("outings.html", fromDate = from_date, toDate = to_date, crsid=crsid, user_outings = your_outings, other_outings=other_outings, sub_outings= sub_outings, races = races_events))
+    lighting['Date'] = pd.to_datetime(lighting['Date'], format='%Y%m%d')
+
+    mask = (lighting['Date'] >= from_date) & (lighting['Date'] <= to_date)
+
+    week_lighting = lighting[mask].to_dict(orient='records')
+
+    return(render_template("outings.html", fromDate = from_date, toDate = to_date, crsid=crsid, user_outings = your_outings, other_outings=other_outings, sub_outings= sub_outings, races = races_events, lightings = week_lighting))
 
 app.config.update(
     SESSION_COOKIE_SECURE=False,  # Ensure cookies are only sent over HTTPS

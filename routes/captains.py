@@ -255,6 +255,8 @@ def set_boats():
         session.merge(merged_boats)
         session.commit()
 
+        return ("OK", 200)
+
     boats_list = []
 
     for row in boats:
@@ -328,6 +330,7 @@ def edit_boat():
                 'two': request.form.get('seat-two') if 'seat-two' in request.form else None,
                 'bow': request.form.get('seat-bow') if 'seat-bow' in request.form else None,
                 'layout': json.dumps(id_layout),
+                'active': True
             }
 
         new_boat = Boat(**boat_info)

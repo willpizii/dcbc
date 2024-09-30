@@ -7,7 +7,11 @@
 
         <div class="col mx-2">
             <div class="row border rounded mb-3 p-4">
-                <h2> <span style="color: #bb0088;">{{ outing.date_time.strftime('%Y-%m-%d') }}</span> <strong>{{outing.date_time.strftime('%H:%M')}} {{outing.time_type}}</strong> </h2>
+                <h2> <span style="color: #bb0088;">{{ outing.date_time.strftime('%Y-%m-%d') }}</span> <strong>{{outing.date_time.strftime('%H:%M')}} {{outing.time_type}}</strong> </h2> <br>
+
+                {% if lup and ldown %}
+                    <p> Lighting Down: {{ ldown }}, Lighting Up: {{ lup }} </p>
+                {% endif %}
             </div>
 
             <div class="row border rounded mb-3 p-4">

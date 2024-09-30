@@ -79,7 +79,7 @@
             const boatName = this.dataset.boat;
             const status = this.dataset.status;
 
-            fetch(window.location.href, {  // Sending the request to the current URL
+            fetch(window.location.href, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -88,10 +88,6 @@
                     boat: boatName,
                     status: status
                 })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Success:', data);
             })
             .catch((error) => {
                 console.error('Error:', error);
