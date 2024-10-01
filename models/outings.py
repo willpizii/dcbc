@@ -22,3 +22,5 @@ class Outing(Base):
 
     plan = Column(Text)
     distance = Column(Integer)
+
+    scratch = Column(Boolean)

@@ -1893,9 +1893,35 @@ def view_outing():
 
     outing_info = session.execute(select(Outing).where(Outing.outing_id == out_id)).scalars().first()
 
-    outing_crew = session.execute(select(Boat).where(Boat.name == outing_info.boat_name)).scalars().first()
-
     pos_seats = ['cox', 'stroke', 'seven', 'six', 'five', 'four', 'three', 'two', 'bow']
+
+    outing_date = outing_info.date_time.date().strftime('%Y%m%d')
+
+    lighting = pd.read_csv('dcbc/data/lightings.csv')
+
+    lighting['Date'] = pd.to_datetime(lighting['Date'], format='%Y%m%d')
+
+    filtered_lighting = lighting[lighting['Date'] == outing_date]
+
+    lighting_up = filtered_lighting['Friendly_Up'].iat[0] if not filtered_lighting.empty else None
+    lighting_down = filtered_lighting['Friendly_Down'].iat[0] if not filtered_lighting.empty else None
+
+    if outing_info.scratch:
+        subs_dict = {} # No subs in a scratch outing
+
+        scratch_crew = json.loads(outing_info.set_crew)
+
+        for seat, rower in scratch_crew.items():
+            # Retrieve the user associated with the rower
+            user = session.execute(select(User).where(User.crsid == rower)).scalars().first()
+
+            # If user exists, update the seat with their formatted name
+            if user:
+                scratch_crew[seat] = f"{user.preferred_name} {user.last_name}"
+
+        return(render_template("outing.html", outing = outing_info, crew = scratch_crew, subs = subs_dict, lup = lighting_up, ldown = lighting_down))
+
+    outing_crew = session.execute(select(Boat).where(Boat.name == outing_info.boat_name)).scalars().first()
 
     crew_dict = {pos: getattr(outing_crew, pos) for pos in pos_seats if getattr(outing_crew, pos) is not None}
 
@@ -1910,21 +1936,8 @@ def view_outing():
             if matched_seat:
                 subs_dict[matched_seat] = sub
 
-        print(to_sub, subs_dict)
-
     else:
         subs_dict = None
-
-    outing_date = outing_info.date_time.date().strftime('%Y%m%d')
-
-    lighting = pd.read_csv('dcbc/data/lightings.csv')
-
-    lighting['Date'] = pd.to_datetime(lighting['Date'], format='%Y%m%d')
-
-    filtered_lighting = lighting[lighting['Date'] == outing_date]
-
-    lighting_up = filtered_lighting['Friendly_Up'].iat[0] if not filtered_lighting.empty else None
-    lighting_down = filtered_lighting['Friendly_Down'].iat[0] if not filtered_lighting.empty else None
 
     for seat, rower in crew_dict.items():
         # Retrieve the user associated with the rower
@@ -1933,8 +1946,6 @@ def view_outing():
         # If user exists, update the seat with their formatted name
         if user:
             crew_dict[seat] = f"{user.preferred_name} {user.last_name}"
-
-    print(outing_crew.shell, crew_dict)
 
     return(render_template("outing.html", outing = outing_info, crew = crew_dict, subs = subs_dict, lup = lighting_up, ldown = lighting_down))
 
@@ -1975,7 +1986,11 @@ def outings():
                 Outing.date_time >= from_date,
                 Outing.date_time <= to_date,
                 or_(Outing.boat_name.in_(boats),
-                    Outing.coach == user_name)
+                    Outing.coach == user_name,
+                    and_(Outing.scratch == True,
+                         func.find_in_set(crsid, Outing.subs),
+                        )
+                    )
             )
         ).order_by(Outing.date_time.asc())
     ).scalars().all()
@@ -1985,7 +2000,8 @@ def outings():
             and_(
                 Outing.date_time >= from_date,
                 Outing.date_time <= to_date,
-                func.find_in_set(crsid, Outing.subs)
+                func.find_in_set(crsid, Outing.subs),
+                Outing.scratch == False
             )
         ).order_by(Outing.date_time.asc())
     ).scalars().all()

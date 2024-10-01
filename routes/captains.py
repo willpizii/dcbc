@@ -399,7 +399,7 @@ def set_outings():
 
     return render_template('setoutings.html', outings = next_outings, from_date = from_date, to_date = to_date)
 
-@captains_bp.route('/captains/outings/edit', methods=['GET', 'POST'])
+@captains_bp.route('/outings/edit', methods=['GET', 'POST'])
 def edit_outing():
     if request.method == 'POST':
         # Handle POST request for editing or creating an outing
@@ -414,7 +414,8 @@ def edit_outing():
                 'subs': [], # Used to put into outings for the subs
                 'coach': outing_data.get('coach'),
                 'time_type': outing_data.get('timeType'),
-                'notes': outing_data.get('notes') if 'notes' in outing_data else None
+                'notes': outing_data.get('notes') if 'notes' in outing_data else None,
+                'scratch': False
             }
 
         # Iterate over the form data to process 'sub-' entries
@@ -450,14 +451,6 @@ def edit_outing():
         session.merge(add_outing)
         session.commit()
 
-        print(new_outing)
-
-        # Here you would process the incoming data, e.g., save to database
-        # Example:
-        # outing = Outing(boat_id=outing_data['boat_id'], ...)
-        # session.add(outing)
-        # session.commit()
-
         return redirect(url_for("captains.set_outings"))
 
     args = request.args
@@ -475,10 +468,88 @@ def edit_outing():
     outing_id = args.get('outing')
     outing = session.execute(select(Outing).where(Outing.outing_id==outing_id)).scalars().first()
 
+    if outing.scratch:
+        return redirect(url_for("captains.scratch_outing", outing=outing_id))
+
     if outing:
         boat_options = [row[0] for row in session.execute(
             select(Boat.name).where(Boat.active == True)).fetchall()]
 
         return render_template('editouting.html', boat_options=boat_options, outing=outing)
+
+    return "Outing not found", 404
+
+@captains_bp.route('/outings/scratch', methods=['GET', 'POST'])
+def scratch_outing():
+    if request.method == 'POST':
+        # Handle the positions
+        max_positions = ['cox', 'stroke', 'seven', 'six', 'five', 'four', 'three', 'two', 'bow']
+
+        id_layout = {}
+
+        outing_data = request.form
+        outing_name = request.form.get('boat_id')
+
+        subs = [request.form.get(seat) for seat in ['seat-cox', 'seat-stroke', 'seat-seven', 'seat-six', 'seat-five', 'seat-four', 'seat-three', 'seat-two', 'seat-bow'] if request.form.get(seat) is not None]
+        crew = {seat.split('-')[-1]: request.form.get(seat)
+                for seat in ['seat-cox', 'seat-stroke', 'seat-seven', 'seat-six', 'seat-five', 'seat-four', 'seat-three', 'seat-two', 'seat-bow'] if request.form.get(seat) is not None}
+
+        new_outing = {
+                'date_time': datetime.strptime(f"{outing_data.get('date')} {outing_data.get('time')}", "%Y-%m-%d %H:%M"),
+                'boat_name': outing_name,
+                'set_crew': json.dumps(crew),
+                'shell': outing_data.get('shell'),
+                'subs': ','.join(subs),
+                'coach': outing_data.get('coach'),
+                'time_type': outing_data.get('timeType'),
+                'notes': outing_data.get('notes') if 'notes' in outing_data else None,
+                'scratch': True
+            }
+
+        if 'outing_id' in outing_data:
+            new_outing.update({'outing_id': outing_data.get('outing_id')})
+
+        session.merge(Outing(**new_outing))
+
+        session.commit()
+
+        return(redirect(url_for('captains.set_outings')))
+
+    args = request.args
+
+    user_crsids = {str(user.crsid):str(user.preferred_name+' '+user.last_name) for user in session.execute(select(User)).scalars().all()}
+    boats_list = {'name': 'new',}
+
+    if 'outing' not in args or args.get('outing') is None:
+        return redirect(url_for("captains.scratch_outing", outing="new"))
+
+    if args.get('outing') == 'new':
+
+        return render_template('scratchouting.html', user_list = user_crsids, boats_list=boats_list, outing='new')
+
+    # Handle case where outing is being edited
+    outing_id = args.get('outing')
+    outing = session.execute(select(Outing).where(Outing.outing_id==outing_id)).scalars().first()
+
+    scratch_crew = json.loads(outing.set_crew)
+
+    boats_list = {}
+
+    boats_list.update(scratch_crew)
+
+    crew_types = {
+        (1, 2): 'pair',
+        (3, 4): 'coxless-four',
+        5: 'coxed-four',
+        range(6, 9): 'eight'
+    }
+
+    seat_count = len(scratch_crew)
+
+    boats_list.update({'crew_type': next((value for key, value in crew_types.items() if seat_count in key), None)})
+
+    if outing:
+
+        return render_template('scratchouting.html', outing=outing, user_list = user_crsids, boats_list=boats_list)
 
     return "Outing not found", 404

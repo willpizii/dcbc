@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+
+    .available {
+        background-color: #98FB98 !important; /* Light green for available */
+    }
+    .not-available {
+        background-color: #FF6F6F  !important; /* Light red for not available */
+    }
+    .if-required {
+        background-color: #FFFFE0  !important; /* Light yellow for if needs be */
+    }
+    .out-of-cam {
+        background-color: #772727  !important; /* Dark red for out of cambridge */
+        color: white !important;
+    }
+    .unfilled {
+        background-color: grey  !important; /* Dark red for out of cambridge */
+        color: white !important;
+    }
+
+</style>
+
+<form method="POST" id="submitOuting" action="{{ url_for('captains.scratch_outing', outing=outing.outing_id) }}">
+
+{% if outing != 'new' %}
+    <input hidden name="outing_id" value="{{ outing.outing_id }}"/>
+{% endif %}
+
+<div class="container-fluid mt-4">
+    <h3> Scratch Outing </h3>
+    <div class="row px-5 py-2">
+        <div class="col mx-2">
+            <div class="row border rounded mb-3 p-4">
+                <input type="text" class="form-control" id="boatNameInput" name="boat_id" value="{{ outing != 'new' and outing.boat_name or '' }}" placeholder="Scratch Outing" required>
+            </div>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" >
+                <h3> Set Time </h3>
+                <table><tr>
+                    <td><input type="date" class="form-control" id="dateInput" placeholder="Select Date" name="date" value="{{ outing != 'new' and outing.date_time.strftime('%Y-%m-%d') or '' }}" required></td>
+                    <td><input type="time" class="form-control" id="timeInput" placeholder="Select Time" name="time" value="{{ outing != 'new' and outing.date_time.strftime('%H:%M') or '' }}" required></td>
+                    <td><input type="text" class="form-control" placeholder="ATBH, OTE, OTW?" name="timeType" value="{{ outing != 'new' and outing.time_type or '' }}" required></td>
+                </tr></table>
+            </div>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv">
+                <select id="boatType" class="form-select mb-3" onchange="filter()" name="boat_type">
+                    <option value="eight">Eight</option>
+                    <option value="coxed-four">Coxed Four / Quad</option>
+                    <option value="coxless-four">Coxless Four / Quad</option>
+                    <option value="pair">Pair / Double</option>
+                </select>
+            </div>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv" >
+                <h3> Coach </h3>
+                <input type="text" class="form-control mb-2" id="coachInput" placeholder="Who is coaching?" name="coach" value="{{ outing.coach }}"></input>
+
+                <h3> Shell </h3>
+                <input class="form-control mb-2" id="shellField" name="shell" value="{{ outing.shell }}" required/>
+
+                <h3> Notes </h3>
+                <input class="form-control mb-1" id="notesField" name="notes" placeholder="Notes..." value="{{ outing.notes }}"/>
+            </div>
+        </div>
+
+        <div class="col mx-2">
+            <div class="row border rounded mb-3 p-4 boatInfoDiv">
+                <table class="table table-bordered table-hover table-striped">
+                    <thead>
+                        <tr>
+                            <th scope="col" width="10%">Seat</th>
+                            <th scope="col" width="10%">Side</th>
+                            <th scope="col" width="60%">Name</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody">
+                        <!-- content populated by JS below -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="replacementsContainer" class="row border rounded mb-3 p-4" style="display: none;"></div>
+            <div class="row border rounded mb-3 p-4 boatInfoDiv">
+                <button class="btn btn-primary" id="submitButton" action="submit">Save Outing</button>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+
+<script>
+    window.boatsList = {{ boats_list | tojson }};
+    window.user_list = {{ user_list | tojson }};
+    window.selectedType = "{{ boats_list.crew_type | default('eight') }}";
+</script>
+<script src="{{ url_for('static', filename='js/scratchouting.js') }}"></script>
+
+
+{% endblock %}

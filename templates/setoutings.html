@@ -19,9 +19,19 @@
         </div>
     </form>
 
-    <a type="button" class="btn btn-primary mb-3" href={{url_for('captains.edit_outing', outing='new')}}>Add a New Outing</a>
+
 
     <div class="row mb-3">
+        <div class="btn-group col-md-6 mb-2" role="group">
+            <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            Add Outing...
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{{url_for('captains.edit_outing', outing='new')}}">Set Crew</a></li>
+                <li><a class="dropdown-item" href="{{url_for('captains.scratch_outing', outing='new')}}">Scratch Crew</a></li>
+            </ul>
+        </div>
+
         <div class="col-md-6">
             <input type="text" id="nameSearch" class="form-control" placeholder="Search by Row" oninput="filter()">
         </div>
