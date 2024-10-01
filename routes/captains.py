@@ -1,8 +1,8 @@
-from flask import Blueprint, request, session, redirect, url_for, render_template, current_app
+from flask import Blueprint, request, session, redirect, url_for, render_template, current_app, jsonify
 from datetime import datetime, timedelta
 import calendar
 import json
-from sqlalchemy import select, asc, and_, update
+from sqlalchemy import select, asc, and_, update, func
 
 # Import necessary utilities and decorators
 from dcbc.project.auth_utils import auth_decorator, superuser_check
@@ -317,21 +317,21 @@ def edit_boat():
                     session.merge(merged_boats)
 
         boat_info = {
-                'name': request.form.get('boat_name'),
-                'crew_type': request.form.get('boat_type'),
-                'shell': request.form.get('boat_shell'),
-                'cox': request.form.get('seat-cox') if 'seat-cox' in request.form else None,
-                'stroke': request.form.get('seat-stroke') if 'seat-stroke' in request.form else None,
-                'seven': request.form.get('seat-seven') if 'seat-seven' in request.form else None,
-                'six': request.form.get('seat-six') if 'seat-six' in request.form else None,
-                'five': request.form.get('seat-five') if 'seat-five' in request.form else None,
-                'four': request.form.get('seat-four') if 'seat-four' in request.form else None,
-                'three': request.form.get('seat-three') if 'seat-three' in request.form else None,
-                'two': request.form.get('seat-two') if 'seat-two' in request.form else None,
-                'bow': request.form.get('seat-bow') if 'seat-bow' in request.form else None,
-                'layout': json.dumps(id_layout),
-                'active': True
-            }
+                    'name': request.form.get('boat_name'),
+                    'crew_type': request.form.get('boat_type'),
+                    'shell': request.form.get('boat_shell'),
+                    'cox': request.form.get('seat-cox') if 'seat-cox' in request.form else None,
+                    'stroke': request.form.get('seat-stroke') if 'seat-stroke' in request.form else None,
+                    'seven': request.form.get('seat-seven') if 'seat-seven' in request.form else None,
+                    'six': request.form.get('seat-six') if 'seat-six' in request.form else None,
+                    'five': request.form.get('seat-five') if 'seat-five' in request.form else None,
+                    'four': request.form.get('seat-four') if 'seat-four' in request.form else None,
+                    'three': request.form.get('seat-three') if 'seat-three' in request.form else None,
+                    'two': request.form.get('seat-two') if 'seat-two' in request.form else None,
+                    'bow': request.form.get('seat-bow') if 'seat-bow' in request.form else None,
+                    'layout': json.dumps(id_layout),
+                    'active': True
+                }
 
         new_boat = Boat(**boat_info)
 
@@ -553,3 +553,75 @@ def scratch_outing():
         return render_template('scratchouting.html', outing=outing, user_list = user_crsids, boats_list=boats_list)
 
     return "Outing not found", 404
+
+@captains_bp.route('/group_calendar', methods=['GET', 'POST'])
+def group_calendar():
+
+    if request.method == 'POST':
+
+        data = request.get_json()
+
+        squad = data.get('squad')
+        tag = data.get('tag')
+        crew = data.get('crew')
+
+        # Start with a base select statement
+        stmt = select(User)
+
+        # Add filters conditionally if the value is not 'all'
+        conditions = []
+        if squad != 'all':
+            conditions.append(User.squad == squad)
+        if tag != 'all':
+            conditions.append(func.find_in_set(tag, User.tags))
+        if crew != 'all':
+            conditions.append(func.find_in_set(crew, User.boats))
+
+        # Apply filters if any exist
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+
+        # Execute the statement to get filtered users
+        result = session.execute(stmt).scalars().all()
+
+        # Build the users_list
+        users_list = [{'crsid': user.crsid, 'name': str(user.preferred_name + ' ' + user.last_name)} for user in result]
+
+        # Return both users_list and availability_data in the response
+        start_date = data.get('start_date', '')
+        end_date = data.get('end_date', '')
+
+        if not start_date or not end_date:  # Validate if both dates are provided
+            return jsonify({'error': 'Invalid date range'}), 400
+
+        # Query to get all records within the date range
+        results = session.execute(
+            select(Daily).where(Daily.date.between(start_date, end_date))
+        ).scalars().all()
+
+        if results:
+            # Prepare the response data by extracting date and user_data from each record
+            availability_data = [
+                {'date': record.date, 'user_data': record.user_data} for record in results
+            ]
+
+            return jsonify({
+                'users_list': users_list,
+                'availability_data': availability_data
+            })
+
+        else:
+            return jsonify({'error': 'No availability found for the given date range'}), 404
+
+    users = session.execute(select(User)).scalars().all()
+    unique_boats = set(row[0] for row in session.execute(select(Boat.name).where(Boat.active == True)).fetchall())
+
+    unique_tags = set()
+
+    for user in users:
+        if user.tags:
+            tags = user.tags.split(',')
+            for tag in tags:
+                unique_tags.add(tag.strip())
+
+    return(render_template('groupcalendar.html', tags=sorted(unique_tags), boats=sorted(unique_boats)))

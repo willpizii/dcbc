@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<style>
+    .available {
+        background-color: #98FB98; /* Light green for available */
+        color: black !important;
+    }
+    .not-available {
+        background-color: #FF6F6F; /* Light red for not available */
+        color: black !important;
+    }
+    .if-required {
+        background-color: #FFFFE0; /* Light yellow for if needs be */
+        color: black !important;
+    }
+    .out-of-cam {
+        background-color: #772727; /* Dark red for out of cambridge */
+        color: white !important;
+    }
+    .Nodata {
+        background-color: #969696;
+    }
+</style>
+
+<div class='container-fluid py-4 px-4'>
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <select id="squadFilter" class="form-select mb-2" onchange="filter()">
+                <option value="all">All Squads</option>
+                <option value="womens">Womens</option>
+                <option value="mens">Mens</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select id="tagFilter" class="form-select mb-2" onchange="filter()">
+                <option value="all">All Rowers</option>
+                {% for tag in tags %}
+                    <option value="{{ tag }}">{{ tag }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select id="crewFilter" class="form-select mb-2" onchange="filter()">
+                <option value="all">All Crews</option>
+                {% for boat in boats %}
+                    <option value="{{ boat }}">{{ boat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label for="start_date">Start Date:</label>
+            <input type="date" id="start_date" class="form-control"  onchange="filter()">
+        </div>
+        <div class="col-md-3">
+            <label for="end_date">End Date:</label>
+            <input type="date" id="end_date" class="form-control"  onchange="filter()">
+        </div>
+    </div>
+
+    <table id="availabilityTable" class="table table-border">
+
+    </table>
+</div>
+
+<script src="{{ url_for('static', filename='js/groupcalendar.js') }}"> </script>
+
+{% endblock content %}

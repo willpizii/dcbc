@@ -107,4 +107,21 @@
     </div>
 </form>
 
+<script>
+    // Warn the user if they try to leave without submitting the form
+    window.addEventListener('beforeunload', function (e) {
+        if (!formSubmitted) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+
+    let formSubmitted = false;
+
+    // Mark the form as submitted when the user submits it
+    document.querySelector('form').addEventListener('submit', function () {
+        formSubmitted = true;
+    });
+</script>
+
 {% endblock %}
