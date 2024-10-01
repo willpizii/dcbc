@@ -1656,6 +1656,8 @@ def submit_availability():
     month = data.get('month')
     notes = data.get('notes', {})
 
+    print(times, notes)
+
     for time_entry in times:
         try:
             time, state = time_entry.split('|')

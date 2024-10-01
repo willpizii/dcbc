@@ -118,17 +118,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (raceDays && raceDays[date] && eventDays && eventDays[date]){
                 cell.classList.add('race-event-day')
                 cell.title = raceDays[date]+'\n'+eventDays[date];
-
-                cell.onclick = function() {
-                    window.location.href = '/races'; // Redirect to /races on click
-                };
             } else if (raceDays && raceDays[date]) {
                 cell.classList.add('race-day');
                 cell.title = raceDays[date];
-
-                cell.onclick = function() {
-                    window.location.href = '/races'; // Redirect to /races on click
-                };
             } else if (eventDays && eventDays[date]) {
                 cell.classList.add('event-day');
                 cell.title = eventDays[date];
@@ -145,6 +137,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     monthSelector.addEventListener('change', function() {
         currentMonth = monthSelector.value;
+        markedCells.clear(); // Prevent submission of prior months which will wipe notes
         initializeTable();
     });
 
