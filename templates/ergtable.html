@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class='container-fluid py-4 px-4'>
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <select id="squadFilter" class="form-select mb-2" onchange="filter()">
+                {% for squad in squads %}
+                    <option value="{{ squad.lower() }}">{{ squad }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-3">
+            <select id="crewFilter" class="form-select mb-2" onchange="filter()"
+                    style="display: {% if superuser %}block{% else %}none{% endif %};">
+                <option value="all">All Crews</option>
+                {% for boat in boats %}
+                    <option value="{{ boat }}">{{ boat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label for="start_date">Start Date:</label>
+            <input type="date" id="start_date" class="form-control"  onchange="filter()">
+        </div>
+        <div class="col-md-3">
+            <label for="end_date">End Date:</label>
+            <input type="date" id="end_date" class="form-control"  onchange="filter()">
+        </div>
+    </div>
+
+    <table id="ergTable" class="table table-bordered table-hover">
+        <div class="container-fluid py-2 px-4">
+            <div class="row">
+                <table id="ergTable" class="table table-bordered table-hover">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Type</th>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Distance</th>
+                            <th>Split</th>
+                            <th>Avg HR</th>
+                            <th>Workout Type</th>
+                            <th>SPM</th>
+                            <th>Comments</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Rows will be populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </table>
+</div>
+
+<script src="{{ url_for('static', filename='js/ergtable.js') }}">
+</script>
+
+{% endblock content %}

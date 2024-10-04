@@ -23,8 +23,7 @@ function filter() {
     fetch(window.location.href, {  // POST to the current page
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': '{{ csrf_token }}'  // If CSRF protection is required
+            'Content-Type': 'application/json'
         },
         body: JSON.stringify(data)  // Send data as JSON
     })

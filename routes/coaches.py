@@ -209,6 +209,7 @@ def outings():
     other_outings = []
 
     all_outings = [{
+        "outing_id": outing.outing_id,
         "date_time": outing.date_time.isoformat(),
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
@@ -217,8 +218,97 @@ def outings():
         'notes': outing.notes if outing.notes else None
     } for outing in all_outings]
 
+    races_events = session.execute(select(Event).where(
+            and_(
+                    Event.date >= from_date,
+                    Event.date <= to_date
+                )
+        ).order_by(Event.date.asc())).scalars().all()
 
-    return(render_template("coachoutings.html", fromDate = from_date, toDate = to_date, user_outings = all_outings, other_outings=other_outings, sub_outings= sub_outings))
+    races_events = [{
+        "name": race_event.name,
+        "date": race_event.date,
+        "crews": race_event.crews,
+        "type": race_event.type
+    } for race_event in races_events]
+
+    lighting = pd.read_csv('dcbc/data/lightings.csv')
+
+    lighting['Date'] = pd.to_datetime(lighting['Date'], format='%Y%m%d')
+
+    mask = (lighting['Date'] >= from_date) & (lighting['Date'] <= to_date)
+
+    week_lighting = lighting[mask].to_dict(orient='records')
+
+    return(render_template("coachoutings.html", fromDate = from_date, toDate = to_date, user_outings = all_outings, other_outings=other_outings, sub_outings= sub_outings, races = races_events, lightings = week_lighting))
+
+@coach_bp.route('/outing')
+def coach_outing():
+
+    referrer = request.referrer
+
+    out_id = request.args.get('id')
+
+    if not out_id:
+        return(redirect(url_for('home')))
+
+    outing_info = session.execute(select(Outing).where(Outing.outing_id == out_id)).scalars().first()
+
+    pos_seats = ['cox', 'stroke', 'seven', 'six', 'five', 'four', 'three', 'two', 'bow']
+
+    outing_date = outing_info.date_time.date().strftime('%Y%m%d')
+
+    lighting = pd.read_csv('dcbc/data/lightings.csv')
+
+    lighting['Date'] = pd.to_datetime(lighting['Date'], format='%Y%m%d')
+
+    filtered_lighting = lighting[lighting['Date'] == outing_date]
+
+    lighting_up = filtered_lighting['Friendly_Up'].iat[0] if not filtered_lighting.empty else None
+    lighting_down = filtered_lighting['Friendly_Down'].iat[0] if not filtered_lighting.empty else None
+
+    if outing_info.scratch:
+        subs_dict = {} # No subs in a scratch outing
+
+        scratch_crew = json.loads(outing_info.set_crew)
+
+        for seat, rower in scratch_crew.items():
+            # Retrieve the user associated with the rower
+            user = session.execute(select(User).where(User.crsid == rower)).scalars().first()
+
+            # If user exists, update the seat with their formatted name
+            if user:
+                scratch_crew[seat] = f"{user.preferred_name} {user.last_name}"
+
+        return(render_template("outing.html", outing = outing_info, crew = scratch_crew, subs = subs_dict, lup = lighting_up, ldown = lighting_down, referrer=referrer))
+
+    outing_crew = session.execute(select(Boat).where(Boat.name == outing_info.boat_name)).scalars().first()
+
+    crew_dict = {pos: getattr(outing_crew, pos) for pos in pos_seats if getattr(outing_crew, pos) is not None}
+
+    if outing_info.set_crew is not None:
+        to_sub = json.loads(outing_info.set_crew)
+
+        subs_dict = {}
+
+        for subbed, sub in to_sub.items():
+            matched_seat = next((k for k, v in crew_dict.items() if v == subbed), None)
+
+            if matched_seat:
+                subs_dict[matched_seat] = sub
+
+    else:
+        subs_dict = None
+
+    for seat, rower in crew_dict.items():
+        # Retrieve the user associated with the rower
+        user = session.execute(select(User).where(User.crsid == rower)).scalars().first()
+
+        # If user exists, update the seat with their formatted name
+        if user:
+            crew_dict[seat] = f"{user.preferred_name} {user.last_name}"
+
+    return(render_template("outing.html", outing = outing_info, crew = crew_dict, subs = subs_dict, lup = lighting_up, ldown = lighting_down, referrer=referrer))
 
 @coach_bp.route('/view')
 def view():

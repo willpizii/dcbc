@@ -26,6 +26,8 @@ from flask import (Flask, redirect, Blueprint, request, jsonify,
                    make_response, render_template, send_from_directory)
 from flask import session as cookie_session
 
+from flask_cors import CORS
+
 from bokeh.io import output_file, show
 from bokeh.plotting import figure
 from bokeh.embed import components
@@ -40,7 +42,7 @@ from cryptography.fernet import Fernet
 from werkzeug.middleware.proxy_fix import ProxyFix
 from ucam_webauth.raven.flask_glue import AuthDecorator
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect, and_, or_, not_
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, select, exists, func, delete, update, asc, inspect, and_, or_, not_, desc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
@@ -65,6 +67,14 @@ class R(flask.Request):
 
 app = Flask(__name__)
 app.request_class = R
+
+# Allow CORS for all subdomains of trusteddomain.com
+CORS(app, resources={r"/*": {"origins": [
+    r"http://wp280.user.srcf.net",
+    r"https://wp280.user.srcf.net",
+    r"http://*.concept2.com",
+    r"https://*.concept2.com"
+]}})
 
 Base.metadata.create_all(engine)
 session.commit()
@@ -1656,8 +1666,6 @@ def submit_availability():
     month = data.get('month')
     notes = data.get('notes', {})
 
-    print(times, notes)
-
     for time_entry in times:
         try:
             time, state = time_entry.split('|')
@@ -2087,6 +2095,87 @@ def outings():
     week_lighting = lighting[mask].to_dict(orient='records')
 
     return(render_template("outings.html", fromDate = from_date, toDate = to_date, crsid=crsid, user_outings = your_outings, other_outings=other_outings, sub_outings= sub_outings, races = races_events, lightings = week_lighting))
+
+@app.route('/ergtable', methods=['GET', 'POST'])
+def group_ergs():
+    if request.method == 'POST':
+        data = request.get_json()
+
+        squad = data.get('squad')
+        crew = data.get('crew')
+
+        # Start with a base select statement
+        stmt = select(User)
+
+        # Add filters conditionally if the value is not 'all'
+        conditions = []
+        if squad != 'all':
+            conditions.append(User.squad == squad)
+        if crew != 'all':
+            conditions.append(func.find_in_set(crew, User.boats))
+
+        start_date = data.get('start_date', '')
+        end_date = data.get('end_date', '')
+
+        conditions.append(not_(func.find_in_set('Inactive', User.tags)))
+
+        # Apply filters if any exist
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+
+        # Execute the statement to get filtered users
+        result = session.execute(stmt).scalars().all()
+
+        log_names = {user.logbookid: str(user.preferred_name + ' ' + user.last_name) for user in result}
+
+        logbook_ids = [user.logbookid for user in result]
+
+        workouts = session.execute(select(Workout).where(and_(
+                    Workout.user_id.in_(logbook_ids),
+                    Workout.date.between(start_date, end_date)
+                )).order_by(desc(Workout.date))).scalars().all()
+
+        ergs = []
+
+        for erg in workouts:
+            erg_dict = {key: value for key, value in vars(erg).items() if not key.startswith('_')}
+            erg_dict = {
+                'user_id': log_names.get(erg_dict['user_id'], erg_dict['user_id']),
+                'type': erg_dict['type'],
+                'date': erg_dict['date'],
+                'split': format_seconds(round((erg_dict['time'] / 10) / (erg_dict ['distance'] / 500),1)),
+                'time': format_seconds(erg_dict['time']) if 'time' in erg_dict else '',
+                'distance': erg_dict['distance'],
+                'avghr': erg_dict['avghr'],
+                'workout_type': erg_dict['workout_type'],
+                'spm': erg_dict['spm'],
+                'comments': erg_dict['comments'],
+            }
+
+            # Append this to the ergs list
+            ergs.append(erg_dict)
+
+        return(jsonify(ergs))
+
+    unique_boats = set(row[0] for row in session.execute(select(Boat.name).where(Boat.active == True)).fetchall())
+
+    crsid = auth_decorator.principal
+
+    puser = session.execute(select(User).where(User.crsid == crsid)).scalar_one_or_none()
+
+    if puser:
+        # Check if the present-user has the 'Captains' tag
+        is_captain = 'Captains' in puser.tags.split(',') if puser.tags else False
+
+        if is_captain:
+            squad_options = ['All', 'Womens', 'Mens']
+        else:
+            squad_options = [puser.squad] if puser.squad else ['All']  # Default to 'All' if no squad
+
+    else:
+        squad_options = ['All']  # Default if no puser is found
+
+    return(render_template('ergtable.html', ergs=[], boats=sorted(unique_boats), squads=squad_options))
 
 app.config.update(
     SESSION_COOKIE_SECURE=False,  # Ensure cookies are only sent over HTTPS

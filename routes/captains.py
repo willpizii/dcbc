@@ -2,7 +2,7 @@ from flask import Blueprint, request, session, redirect, url_for, render_templat
 from datetime import datetime, timedelta
 import calendar
 import json
-from sqlalchemy import select, asc, and_, update, func
+from sqlalchemy import select, asc, and_, update, func, desc, not_
 
 # Import necessary utilities and decorators
 from dcbc.project.auth_utils import auth_decorator, superuser_check
@@ -11,7 +11,10 @@ from dcbc.models.dailydb import Daily
 from dcbc.models.eventdb import Event
 from dcbc.models.boatsdb import Boat
 from dcbc.models.outings import Outing
+from dcbc.models.workout import Workout
 from dcbc.project.session import session  # Assuming your database session is set up in another file
+
+from dcbc.project.utils import format_seconds
 
 
 # Define the blueprint
@@ -625,3 +628,4 @@ def group_calendar():
                 unique_tags.add(tag.strip())
 
     return(render_template('groupcalendar.html', tags=sorted(unique_tags), boats=sorted(unique_boats)))
+

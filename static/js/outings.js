@@ -135,9 +135,11 @@ dayNames.forEach((day, index) => {
 
                 const headerStyle = outing.type === 'your' ? 'background-color: #bb0088; color: white;' : '';
 
+                const baseOutingUrl = document.referrer.includes('/coach/outings') ? '/coach/outing' : '/outing';
+
                 // Create content for the outing with icons and table for data
                 cardBody.innerHTML = `
-                    <a href="/outing?id=${outing.outing_id}" style="text-decoration: none; color: inherit;"><h4 class="card-header" style="${headerStyle}">${new Date(outing.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${outing.time_type}</h4></a>
+                    <a href="${baseOutingUrl}?id=${outing.outing_id}" style="text-decoration: none; color: inherit;"><h4 class="card-header" style="${headerStyle}">${new Date(outing.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${outing.time_type}</h4></a>
                     <div class="card-body">
                         <table style="width: 100%; border-collapse: collapse; text-align: left;">
                             <tr><td><strong>Crew:</strong></td><td>${outing.boat_name}</td></tr>
@@ -192,6 +194,29 @@ function toggleOtherOutings(showOther) {
     });
 }
 
+// Safely add event listeners for radio buttons if they exist
+const allOutingsCheck = document.getElementById('allOutingsCheck');
+const myOutingsCheck = document.getElementById('myOutingsCheck');
+
+if (allOutingsCheck) {
+    allOutingsCheck.addEventListener('change', function() {
+        if (this.checked) {
+            toggleOtherOutings(true); // Show 'other' outings when "All Outings" is selected
+        }
+    });
+}
+
+if (myOutingsCheck) {
+    myOutingsCheck.addEventListener('change', function() {
+        if (this.checked) {
+            toggleOtherOutings(false); // Hide 'other' outings when "My Outings" is selected
+        }
+    });
+}
+
+// Initially hide 'other' outings since 'My Outings' is checked by default
+toggleOtherOutings(false);
+
 
 // Function to draw the 'No outings for this day' message
 function drawNoOutingsMessage(dayDiv) {
@@ -212,21 +237,7 @@ function drawNoOutingsMessage(dayDiv) {
     dayDiv.appendChild(noOutingsMessage);
 }
 
-// Event listeners for radio buttons
-document.getElementById('allOutingsCheck').addEventListener('change', function() {
-    if (this.checked) {
-        toggleOtherOutings(true); // Show 'other' outings when "All Outings" is selected
-    }
-});
 
-document.getElementById('myOutingsCheck').addEventListener('change', function() {
-    if (this.checked) {
-        toggleOtherOutings(false); // Hide 'other' outings when "My Outings" is selected
-    }
-});
-
-// Initially hide 'other' outings since 'My Outings' is checked by default
-toggleOtherOutings(false);
 
 document.getElementById('nextWeekButton').addEventListener('click', function() {
     // Get the value of the date input
@@ -238,8 +249,9 @@ document.getElementById('nextWeekButton').addEventListener('click', function() {
     // Format the date to YYYY-MM-DD
     const nextWeekDate = fromDate.toISOString().split('T')[0];
 
-    // Redirect to /outings with the weekof parameter
-    window.location.href = `/outings?weekof=${nextWeekDate}`;
+    const url = new URL(window.location.href);
+    url.searchParams.set('weekof', nextWeekDate);
+    window.location.href = url.toString();
 });
 document.getElementById('previousWeekButton').addEventListener('click', function() {
     // Get the value of the date input
@@ -251,8 +263,9 @@ document.getElementById('previousWeekButton').addEventListener('click', function
     // Format the date to YYYY-MM-DD
     const previousWeekDate = fromDate.toISOString().split('T')[0];
 
-    // Redirect to /outings with the weekof parameter
-    window.location.href = `/outings?weekof=${previousWeekDate}`;
+    const url = new URL(window.location.href);
+    url.searchParams.set('weekof', previousWeekDate);
+    window.location.href = url.toString();
 });
 
 // Function to filter outings based on input text
