@@ -1,66 +1,77 @@
-// Define the days of the week for column headers
-const days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-// Function to get the number of days in a month
-function getDaysInMonth(month, year) {
-    return new Date(year, month, 0).getDate();
+function parseDateString(dateString) {
+    // Split the date string into parts
+    const parts = dateString.split('/');
+    // Create a new Date object with year, month (0-indexed), and day
+    return new Date(parts[2], parts[1] - 1, parts[0]); // Month is 0-based
 }
 
-// Function to get the day of the week the month starts on (0 = Sunday, 1 = Monday, etc.)
-function getStartDayOfMonth(month, year) {
-    const startDay = new Date(year, month - 1, 1).getDay();
-    return (startDay === 0) ? 6 : startDay - 1;
-}
-
-// Function to populate the calendar based on the selected month
-function populateCalendar() {
-    const monthSelector = document.getElementById('monthSelector');
-    const selectedMonth = parseInt(monthSelector.value);  // Get the selected month as an integer
-    const monthName = new Date(0, selectedMonth - 1).toLocaleString('default', { month: 'long' });
+function populateWeeklyHours(startDate) {
     const calendarBody = document.getElementById('calendarBody');
-    const year = new Date().getFullYear(); // Use the current year
 
     // Clear previous rows
     calendarBody.innerHTML = '';
 
-    // Determine the number of days in the selected month
-    const daysInMonth = getDaysInMonth(selectedMonth, year);
+    // Define hours and days
+    const hours = Array.from({ length: 13 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`); // Hours from 6 AM to 6 PM
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-    // Get the start day of the month (0 = Sunday, 1 = Monday, etc.)
-    const startDay = getStartDayOfMonth(selectedMonth, year);
+    // Convert startDate to a Date object using the parseDateString function
+    const start = parseDateString(startDate);
 
-    // Fill in the weeks and days
-    let dayCounter = 1; // Keeps track of the day of the month
+    // Create the header row (days across the top)
+    let headerRow = '<tr><th></th>'; // Start with an empty cell for the top-left corner
+    for (let i = 0; i < days.length; i++) {
+        // Create a new date for the current day
+        const currentDay = new Date(start);
+        currentDay.setDate(start.getDate() + i); // Increment the date
 
-    // We might need to account for previous month's days to align the first day correctly
-    let numberOfWeeks = Math.ceil((daysInMonth + startDay) / 7);
+        // Format the header as DD/MM
+        const dayFormatted = String(currentDay.getDate()).padStart(2, '0');
+        const monthFormatted = String(currentDay.getMonth() + 1).padStart(2, '0'); // Months are 0-based
 
-    for (let week = 0; week < numberOfWeeks; week++) {
-        let row = '<tr>';
+        // Add each day of the week to the header
+        headerRow += `<th>${days[i].slice(0, 3)} ${dayFormatted}/${monthFormatted}</th>`;
+    }
+    headerRow += '</tr>';
+    calendarBody.innerHTML += headerRow; // Append the header row to the calendar body
 
-        for (let day = 0; day < 7; day++) {
-            if (week === 0 && day < startDay || dayCounter > daysInMonth) {
-                // Empty cell for days outside the current month
-                row += '<td class="fill-grey"></td>';
-            } else {
-                // Construct the full YYYYMMDD date string
-                let fullDate = `${year}${String(selectedMonth).padStart(2, '0')}${String(dayCounter).padStart(2, '0')}`;
-                const noteValue = userNotes[fullDate] || "";
-                row += `<td data-date="${fullDate}">${dayCounter}<input class='form-control note-input' input-date="${fullDate}" name="input-${fullDate}" value="${noteValue}" type="hidden" /></td>`;
-                dayCounter++;
-            }
+    // Fill in the hours and their corresponding days
+    for (let hour of hours) {
+        let row = `<tr><th>${hour}</th>`; // Each row starts with the hour
+
+        for (let i = 0; i < days.length; i++) {
+            // Create a new date for the current day
+            const currentDay = new Date(start);
+            currentDay.setDate(start.getDate() + i); // Increment the date
+
+            // Format the date as YYYY-MM-DD for the data attributes
+            const dateString = currentDay.toISOString().split('T')[0];
+
+            // Add a cell for each day of the week with the hour
+            const noteValue = userNotes[`${dateString}-${hour}`] || "";
+            row += `<td data-date="${dateString}-${hour}">${hour}<input class='form-control note-input' name="input-${dateString}-${hour}" value="${noteValue}" type="hidden" /></td>`;
         }
 
         row += '</tr>';
-        calendarBody.innerHTML += row;
+        calendarBody.innerHTML += row; // Append the row to the calendar body
     }
 }
 
-// Initial population of the calendar
-populateCalendar();
+// Event listener for the weekSelector to repopulate the table when changed
+document.getElementById('weekSelector').addEventListener('change', function () {
+    const selectedStartDate = this.value; // Get the new Monday date in DD/MM/YYYY format
+    populateWeeklyHours(selectedStartDate); // Repopulate the calendar
+});
 
-// Add event listener for month selector change
-document.getElementById('monthSelector').addEventListener('change', populateCalendar);
+// Event listener for the weekSelector to repopulate the table when changed
+document.getElementById('weekSelector').addEventListener('change', function () {
+    const selectedStartDate = this.value; // Get the new Monday date
+    populateWeeklyHours(selectedStartDate); // Repopulate the calendar
+});
+
+
+populateWeeklyHours(document.getElementById('weekSelector').value);
 
 document.addEventListener('DOMContentLoaded', function () {
     let isMouseDown = false;
@@ -69,35 +80,34 @@ document.addEventListener('DOMContentLoaded', function () {
     const lockedCells = new Set(); // Set to track locked cells
 
     let markMode = 'available'; // Default mode
-    let currentMonth = document.getElementById('monthSelector').value;
-
+    const weekSelector = document.getElementById('weekSelector');
     const table = document.getElementById('availabilityTable');
     const form = document.getElementById('availabilityForm');
-    const monthSelector = document.getElementById('monthSelector');
 
-    const existingData = window.existingData;
-    const raceDays = window.raceDays;
-    const eventDays = window.eventDays;
+    const existingData = window.existingData || null; // Assume existingData is passed from backend
+    const raceDays = window.raceDays || {};
+    const eventDays = window.eventDays || {};
 
     // Function to update table based on week selection
     function initializeTable() {
-        const selectedMonth = monthSelector.value;
-        if (!existingData) {
-            console.warn(`No data found`);
+
+        console.log(existingData);
+
+        if (!existingData  || (typeof existingData === 'object' && Object.keys(existingData).length === 0)) {
+            console.warn(`No data found, setting all cells to available.`);
+            // Select all cells and set them to 'available'
             document.querySelectorAll('td[data-date]').forEach(cell => {
                 const date = cell.dataset.date;
 
-                // Determine the cell's state based on existing data
-                let currentState = 'available'; // Default state
-                // Apply the determined state
-                markedCells.set(date, currentState);
+                // Set the default state to 'available'
+                markedCells.set(date, 'available');
                 cell.classList.remove('available', 'not-available', 'if-required', 'out-of-cam');
-                cell.classList.add(currentState);
+                cell.classList.add('available'); // Set all cells to 'available'
             });
-            return;
+            return; // Exit early if no existing data
         }
 
-        const monthData = existingData;
+        const weekData = existingData;
 
         document.querySelectorAll('td[data-date]').forEach(cell => {
             const date = cell.dataset.date;
@@ -105,25 +115,14 @@ document.addEventListener('DOMContentLoaded', function () {
             // Determine the cell's state based on existing data
             let currentState = 'available'; // Default state
 
-            if (monthData['available'] && monthData['available'].includes(date)) {
+            if (weekData['available'] && weekData['available'].includes(date)) {
                 currentState = 'available';
-            } else if (monthData['not-available'] && monthData['not-available'].includes(date)) {
+            } else if (weekData['not-available'] && weekData['not-available'].includes(date)) {
                 currentState = 'not-available';
-            } else if (monthData['if-required'] && monthData['if-required'].includes(date)) {
+            } else if (weekData['if-required'] && weekData['if-required'].includes(date)) {
                 currentState = 'if-required';
-            } else if (monthData['out-of-cam'] && monthData['out-of-cam'].includes(date)) {
+            } else if (weekData['out-of-cam'] && weekData['out-of-cam'].includes(date)) {
                 currentState = 'out-of-cam';
-            }
-
-            if (raceDays && raceDays[date] && eventDays && eventDays[date]){
-                cell.classList.add('race-event-day')
-                cell.title = raceDays[date]+'\n'+eventDays[date];
-            } else if (raceDays && raceDays[date]) {
-                cell.classList.add('race-day');
-                cell.title = raceDays[date];
-            } else if (eventDays && eventDays[date]) {
-                cell.classList.add('event-day');
-                cell.title = eventDays[date];
             }
 
             // Apply the determined state
@@ -135,8 +134,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     initializeTable();
 
-    monthSelector.addEventListener('change', function() {
-        currentMonth = monthSelector.value;
+    weekSelector.addEventListener('change', function() {
         markedCells.clear(); // Prevent submission of prior months which will wipe notes
         initializeTable();
     });
@@ -214,7 +212,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const data = {
             name: form.name.value,
-            month: currentMonth,
+            weekStart: weekSelector.value,
             times: times,
             notes: notes
         };
@@ -274,6 +272,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     }
+
     document.getElementById('showNotes').addEventListener('click', function(event) {
         event.preventDefault();
         // Select all note input elements

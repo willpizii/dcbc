@@ -6,6 +6,7 @@ function filter() {
     const squadFilter = document.getElementById('squadFilter').value;
     const tagFilter = document.getElementById('tagFilter').value;
     const crewFilter = document.getElementById('crewFilter').value;
+    const modeSwitch = document.getElementById('modeSwitch').value;
 
     const startDate = document.getElementById('start_date').value;
     const endDate = document.getElementById('end_date').value;
@@ -15,6 +16,7 @@ function filter() {
         squad: squadFilter,
         tag: tagFilter,
         crew: crewFilter,
+        mode: modeSwitch,
         start_date: startDate,
         end_date: endDate
     };
@@ -83,15 +85,49 @@ function generateTable() {
     // Append the header row to the table
     table.appendChild(headerRow);
 
+
+    let previousDay = null; // To track the previous day
+
     // Create a row for each date in the availabilityData
     filteredData.forEach(entry => {
         const row = document.createElement('tr');
 
         // Create and append the date cell
         const dateCell = document.createElement('td');
-        const date = new Date(entry.date); // Create a Date object
-        const options = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
-        const formattedDate = date.toLocaleDateString('en-US', options)
+        let date, formattedDate;
+
+        if (document.getElementById('modeSwitch').value === 'daily') {
+            date = new Date(entry.date); // Create a Date object
+            const options = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+            formattedDate = date.toLocaleDateString('en-US', options);
+        } else {
+            date = new Date(entry.date); // Create a Date object
+
+            // Format as HH:MM DD/MM/YYYY
+            const hours = String(date.getUTCHours()).padStart(2, '0');
+            const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+            const day = String(date.getUTCDate()).padStart(2, '0');
+            const month = date.toLocaleDateString('en-GB', { month: 'short' });
+
+            formattedDate = `${hours}:${minutes} ${day} ${month}`; // Combine time and date
+
+            // Check if the current day is different from the previous day
+            const currentDay = date.getUTCDate(); // Get the current day
+
+            if (previousDay !== null && previousDay !== currentDay) {
+                // Add an empty row or divider line between different days
+                const dividerRow = document.createElement('tr');
+                const dividerCell = document.createElement('td');
+                dividerCell.colSpan = usersList.length + 1; // Span across all columns
+                dividerCell.style.borderTop = '2px solid #000'; // Strong divider line
+                dividerCell.style.borderBottom = '2px solid #000'; // Strong divider line
+                dividerRow.appendChild(dividerCell);
+                table.appendChild(dividerRow); // Append divider row to the table
+            }
+
+            // Update previousDay with the current day after the check
+            previousDay = currentDay;
+        }
         dateCell.textContent = formattedDate;
         row.appendChild(dateCell);
 
@@ -107,10 +143,9 @@ function generateTable() {
             availabilityCell.style.minWidth = '80px';
 
             row.appendChild(availabilityCell);
-
         });
 
-        // Append the row to the table
+        // Append the row to the calendar body
         table.appendChild(row);
     });
 }

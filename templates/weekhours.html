@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+    table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    th, td {
+        border: 1px solid black;
+        padding: 8px;
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+    }
+    .available {
+        background-color: #98FB98; /* Light green for available */
+    }
+    .not-available {
+        background-color: #FF6F6F; /* Light red for not available */
+    }
+    .if-required {
+        background-color: #FFFFE0; /* Light yellow for if needs be */
+    }
+    .out-of-cam {
+        background-color: #772727; /* Dark red for out of cambridge */
+        color: white !important;
+    }
+    .race-day{
+        box-shadow: inset 0px 0px 0px 4px #bb0088;
+    }
+    .event-day{
+        box-shadow: inset 0px 0px 0px 4px #0088bb;
+    }
+    .race-event-day{
+        box-shadow: inset 0px 0px 0px 2px #0088bb,
+                    inset 0px 0px 0px 4px #bb0088;
+    }
+    .button-group {
+        margin-bottom: 10px;
+    }
+    .active-button {
+        border: 3px solid black; /* Strong black border */
+    }
+    #markAvailable {
+        background-color: #98FB98; /* Match the 'available' cell color */
+        color: black;
+    }
+    #markNotAvailable {
+        background-color: #FF6F6F; /* Match the 'not-available' cell color */
+        color: black;
+    }
+    #markIfRequired {
+        background-color: #FFFFE0; /* Match the 'if-needs-be' cell color */
+        color: black;
+    }
+    #markOutOfCam {
+        background-color: #772727; /* Match the 'if-needs-be' cell color */
+        color: white;
+    }
+
+    .fill-grey{
+        background-color: #CCCCCC;
+        cursor: not-allowed;
+    }
+    button {
+        border: none;
+        padding: 10px;
+        font-size: 16px;
+        cursor: pointer;
+        margin-right: 10px;
+    }
+    /* Ensures proper alignment and spacing */
+    td, th {
+        min-width: 100px;
+    }
+</style>
+
+<div class="container-flex mt-5 px-4">
+    <div class="p-4 border rounded">
+        <h1 class="mb-4">Fill your Availability</h1>
+        <div class="button-group">
+            <button id="markAvailable" class='active-button'>Mark as Available</button>
+            <button id="markIfRequired">Mark as If Required</button>
+            <button id="markNotAvailable">Mark as Not Available</button>
+            <button id="markOutOfCam">Mark as Out of Cambridge</button>
+        </div>
+        <form method="POST" id="availabilityForm" action="/hourly_availability">
+            <div class="row g-2 mb-2">
+                <div class="col-auto">
+                    <label for="name" class="col-form-label">Your Name:</label>
+                </div>
+                <div class="col-auto">
+                    <input type="text" id="name" name="name" hidden value="{{ crsid }}">
+                    <input type="text" style="cursor: not-allowed;" class="form-control" disabled value="{{ username }}">
+                </div>
+                <div class="col-auto">
+                    <button id="showNotes" class="btn btn-secondary">Show and Add Notes</button>
+                </div>
+                <div class="col-auto">
+                    <select id="weekSelector" name="week" class="form-select">
+                        {% for week_number, start_date in weeks %}
+                            <option value="{{ start_date }}" {% if week_number == selected_week %}selected{% endif %}>
+                                Week starting {{ start_date }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <label>Select Times:</label><br>
+            <div>
+                <table id="availabilityTable" border="1">
+                    <tbody id='calendarBody'>
+                    </tbody>
+                </table>
+            </div>
+            <br>
+            <button type="submit">Save Week</button>
+        </form>
+    </div>
+</div>
+
+
+
+<script>
+    window.existingData = {{ existingData|tojson|default('{}')|safe }};
+    window.raceDays = {{ race_days|tojson|default('{}')|safe }};
+    window.eventDays = {{ event_days|tojson|default('{}')|safe }};
+    window.userNotes = {{ user_notes|tojson|default('{}')|safe }}
+</script>
+
+<script src="{{ url_for('static', filename='js/hourly.js') }}"></script>
+
+{% endblock %}

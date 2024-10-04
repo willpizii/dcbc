@@ -53,6 +53,7 @@ from dcbc.models.boatsdb import Boat
 from dcbc.models.dailydb import Daily
 from dcbc.models.eventdb import Event
 from dcbc.models.outings import Outing
+from dcbc.models.hoursdb import Hourly
 from dcbc.models.base import Base
 
 from dcbc.project.session import session, engine
@@ -2144,7 +2145,7 @@ def group_ergs():
                 'type': erg_dict['type'],
                 'date': erg_dict['date'],
                 'split': format_seconds(round((erg_dict['time'] / 10) / (erg_dict ['distance'] / 500),1)),
-                'time': format_seconds(erg_dict['time']) if 'time' in erg_dict else '',
+                'time': format_seconds(erg_dict['time'] / 10) if 'time' in erg_dict else '',
                 'distance': erg_dict['distance'],
                 'avghr': erg_dict['avghr'],
                 'workout_type': erg_dict['workout_type'],
@@ -2176,6 +2177,134 @@ def group_ergs():
         squad_options = ['All']  # Default if no puser is found
 
     return(render_template('ergtable.html', ergs=[], boats=sorted(unique_boats), squads=squad_options))
+
+@app.route('/hourly_availability', methods=['GET', 'POST'])
+def hourly_availability():
+
+    if request.method == 'POST':
+        crsid = auth_decorator.principal
+
+        data = request.get_json()
+        times = data.get('times', [])
+        notes = data.get('notes', {})
+
+        for time_entry in times:
+            try:
+                time, state = time_entry.split('|')
+
+                date = datetime.strptime(time, '%Y-%m-%d-%H:%M')
+
+                row = session.get(Hourly, date)
+
+                if row:
+                    if row.user_data:
+                        user_data = json.loads(row.user_data)
+                    else:
+                        user_data = {}
+
+                    # Update the user_data for the specific crsid
+                    if crsid not in user_data:
+                        user_data[crsid] = {'state': state, 'notes': notes.get(time, None)}
+                    else:
+                        # Update the 'state' field
+                        user_data[crsid]['state'] = state
+                        user_data[crsid]['notes'] = notes.get(time, None)
+
+                    row.user_data = json.dumps(user_data)
+                    session.merge(row)
+
+                else:
+                    new_row = Hourly(date=date, user_data=json.dumps({crsid: {'state': state, 'notes': notes.get(time, None)}}))
+                    session.add(new_row)
+
+            except ValueError as e:
+                print(f"Error processing time entry {time_entry}: {e}")
+                continue
+
+        # Commit all inserts to the database
+        session.commit()
+
+    crsid = auth_decorator.principal
+
+    username = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
+
+    # Export data from SQL into a format comprehensible by html-side JS interpreter
+    def load_user_data(crsid):
+        # Fetch all rows for the given crsid
+        rows = session.execute(select(Hourly)).scalars().all()
+
+        # Initialize the dictionary
+        state_dates = {}
+        race_dates = {}
+        event_dates = {}
+        notes = {}
+
+        # Process each row
+        for row in rows:
+            datetime_str = row.date.strftime('%Y-%m-%d-%H:%M')  # Format date as YYYYMMDD
+
+            user_data = json.loads(row.user_data) if row.user_data else {}
+
+            # Check if the crsid is in user_data
+            if crsid in user_data:
+                state = user_data[crsid]['state']
+                note = user_data[crsid]['notes']
+
+                notes[datetime_str] = note
+
+                # Initialize list for state if not already present
+                if state not in state_dates:
+                    state_dates[state] = []
+
+                # Add the date to the list for the specific state
+                state_dates[state].append(datetime_str)
+
+        return state_dates, race_dates, event_dates, notes
+
+    existingData, raceDays, eventDays, userNotes = load_user_data(crsid)
+
+    context = {
+        'existingData': existingData,
+        'crsid': crsid,
+        'username': username,
+        'hours_of_day': hours_of_day,
+        'existing': True,
+        'race_days': raceDays,
+        'event_days': eventDays,
+        'user_notes': userNotes
+    }
+
+    now = datetime.now()
+    year = now.year
+    week = now.isocalendar()[1]
+
+    selected_week = request.form.get('week', week)
+
+    if 'refweek' in request.args:
+        selected_week=request.args.get('refweek')
+
+    # Convert the selected month to an integer
+    selected_week = int(selected_week)
+
+    # Get days in the month
+    # Get days of the week (short format like "Mon", "Tue", etc.)
+    days_of_week = calendar.weekheader(3).split()
+
+    next_15_weeks = []
+
+    # Calculate the start date of the current week (Monday)
+    current_week_start = now - timedelta(days=now.weekday())
+
+    # Loop through the next 15 weeks
+    for i in range(16):
+        # Append the week number and start date as a tuple
+        next_15_weeks.append((current_week_start.isocalendar()[1], current_week_start.strftime('%d/%m/%Y')))
+        # Move to the next week
+        current_week_start += timedelta(weeks=1)
+
+    return render_template('weekhours.html', **context, days_of_week=days_of_week,
+                           weeks=next_15_weeks,
+                           week=selected_week)
 
 app.config.update(
     SESSION_COOKIE_SECURE=False,  # Ensure cookies are only sent over HTTPS

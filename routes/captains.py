@@ -8,6 +8,7 @@ from sqlalchemy import select, asc, and_, update, func, desc, not_
 from dcbc.project.auth_utils import auth_decorator, superuser_check
 from dcbc.models.usersdb import User
 from dcbc.models.dailydb import Daily
+from dcbc.models.hoursdb import Hourly
 from dcbc.models.eventdb import Event
 from dcbc.models.boatsdb import Boat
 from dcbc.models.outings import Outing
@@ -66,7 +67,7 @@ def home():
 
 
 # Define the availability route
-@captains_bp.route('/availability', methods=['GET', 'POST'])
+@captains_bp.route('/availability')
 def availability():
 
     crsid = request.args.get('crsid')
@@ -567,6 +568,7 @@ def group_calendar():
         squad = data.get('squad')
         tag = data.get('tag')
         crew = data.get('crew')
+        mode = data.get('mode')
 
         # Start with a base select statement
         stmt = select(User)
@@ -597,21 +599,38 @@ def group_calendar():
         if not start_date or not end_date:  # Validate if both dates are provided
             return jsonify({'error': 'Invalid date range'}), 400
 
-        # Query to get all records within the date range
-        results = session.execute(
-            select(Daily).where(Daily.date.between(start_date, end_date))
-        ).scalars().all()
+        if mode == 'daily':
+            # Query to get all records within the date range
+            results = session.execute(
+                select(Daily).where(Daily.date.between(start_date, end_date))
+            ).scalars().all()
 
-        if results:
-            # Prepare the response data by extracting date and user_data from each record
-            availability_data = [
-                {'date': record.date, 'user_data': record.user_data} for record in results
-            ]
+            if results:
+                # Prepare the response data by extracting date and user_data from each record
+                availability_data = [
+                    {'date': record.date, 'user_data': record.user_data} for record in results
+                ]
 
-            return jsonify({
-                'users_list': users_list,
-                'availability_data': availability_data
-            })
+                return jsonify({
+                    'users_list': users_list,
+                    'availability_data': availability_data
+                })
+
+        elif mode == 'hourly':
+            results = session.execute(
+                select(Hourly).where(Hourly.date.between(start_date, end_date))
+            ).scalars().all()
+
+            if results:
+                # Prepare the response data by extracting date and user_data from each record
+                availability_data = [
+                    {'date': record.date, 'user_data': record.user_data} for record in results
+                ]
+
+                return jsonify({
+                    'users_list': users_list,
+                    'availability_data': availability_data
+                })
 
         else:
             return jsonify({'error': 'No availability found for the given date range'}), 404
