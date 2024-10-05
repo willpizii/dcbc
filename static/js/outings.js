@@ -241,7 +241,7 @@ function drawNoOutingsMessage(dayDiv) {
 
 document.getElementById('nextWeekButton').addEventListener('click', function() {
     // Get the value of the date input
-    const fromDate = new Date(document.getElementById('fromDateBox').value);
+    const fromDate = new Date(document.getElementById('fromDateBox').value + 'T12:00:00');
 
     // Add 7 days to the date
     fromDate.setDate(fromDate.getDate() + 7);
@@ -255,7 +255,7 @@ document.getElementById('nextWeekButton').addEventListener('click', function() {
 });
 document.getElementById('previousWeekButton').addEventListener('click', function() {
     // Get the value of the date input
-    const fromDate = new Date(document.getElementById('fromDateBox').value);
+    const fromDate = new Date(document.getElementById('fromDateBox').value + 'T12:00:00');
 
     // Subtract 7 days from the date
     fromDate.setDate(fromDate.getDate() - 7);
