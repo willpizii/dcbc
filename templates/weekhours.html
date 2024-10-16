@@ -87,8 +87,12 @@
             <button id="markNotAvailable">Mark as Not Available</button>
             <button id="markOutOfCam">Mark as Out of Cambridge</button>
         </div>
+
         <form method="POST" id="availabilityForm" action="/hourly_availability">
             <div class="row g-2 mb-2">
+                <div class="col-auto">
+                    <button id="copyPreviousWeek" type="button" class="btn btn-secondary">Copy from Previous Week</button>
+                </div>
                 <div class="col-auto">
                     <label for="name" class="col-form-label">Your Name:</label>
                 </div>

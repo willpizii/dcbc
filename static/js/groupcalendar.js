@@ -103,16 +103,21 @@ function generateTable() {
         } else {
             date = new Date(entry.date); // Create a Date object
 
-            // Format as HH:MM DD/MM/YYYY
+            // Format as HH:MM DD/MM/YYYY using UTC methods
             const hours = String(date.getUTCHours()).padStart(2, '0');
             const minutes = String(date.getUTCMinutes()).padStart(2, '0');
             const day = String(date.getUTCDate()).padStart(2, '0');
-            const month = date.toLocaleDateString('en-GB', { month: 'short' });
+            const month = date.toLocaleDateString('en-GB', { month: 'short' }); // Short month format
 
-            formattedDate = `${hours}:${minutes} ${day} ${month}`; // Combine time and date
+            // Add weekday short string using UTC methods
+            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const weekday = weekdays[date.getUTCDay()]; // Get the UTC weekday short string
 
-            // Check if the current day is different from the previous day
-            const currentDay = date.getUTCDate(); // Get the current day
+            // Combine to the desired format: 'Weekday HH:MM DD MMM'
+            formattedDate = `${weekday} ${hours}:${minutes} ${day} ${month}`;
+
+            // Check if the current UTC day is different from the previous UTC day
+            const currentDay = date.getUTCDate(); // Get the current day in UTC
 
             if (previousDay !== null && previousDay !== currentDay) {
                 // Add an empty row or divider line between different days

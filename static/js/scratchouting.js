@@ -23,6 +23,11 @@ const defaultSide = {
     'pair': ['stroke', 'bow']
 };
 
+function setBoatType(crewType) {
+    const boatTypeSelect = document.getElementById('boatType');
+    boatTypeSelect.value = crewType || 'eight';  // Set crewType or default to 'eight'
+}
+
 const boatsList = window.boatsList;
 
 const user_list = window.user_list;
@@ -97,6 +102,7 @@ function filter() {
 
 // Initialize table when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    setBoatType(window.crewType);
     filter(); // Call filter to render the default selection
     attachEventListeners();
 

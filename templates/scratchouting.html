@@ -93,6 +93,7 @@
     window.boatsList = {{ boats_list | tojson }};
     window.user_list = {{ user_list | tojson }};
     window.selectedType = "{{ boats_list.crew_type | default('eight') }}";
+    window.crewType = '{{ crew_type | default("eight") }}';
 </script>
 <script src="{{ url_for('static', filename='js/scratchouting.js') }}"></script>
 

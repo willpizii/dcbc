@@ -550,7 +550,15 @@ def scratch_outing():
 
     seat_count = len(scratch_crew)
 
-    boats_list.update({'crew_type': next((value for key, value in crew_types.items() if seat_count in key), None)})
+    boats_list.update({
+        'crew_type': next(
+            (value for key, value in crew_types.items()
+            if (isinstance(key, (tuple, range)) and seat_count in key)
+            or (isinstance(key, int) and seat_count == key)
+            ),
+            None
+        )
+    })
 
     if outing:
 

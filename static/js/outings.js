@@ -135,7 +135,12 @@ dayNames.forEach((day, index) => {
 
                 const headerStyle = outing.type === 'your' ? 'background-color: #bb0088; color: white;' : '';
 
-                const baseOutingUrl = document.referrer.includes('/coach/outings') ? '/coach/outing' : '/outing';
+                const currentPath = window.location.pathname;
+
+                // Determine the base URL based on the current path
+                const baseOutingUrl = currentPath.includes('/coach/outings') ? '/coach/outing' : '/outing';
+
+                console.log(baseOutingUrl);
 
                 // Create content for the outing with icons and table for data
                 cardBody.innerHTML = `

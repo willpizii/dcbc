@@ -7,4 +7,4 @@ source ~/Flaskenv/bin/activate
 cd ..
 
 # Start Gunicorn from the parent directory
-nohup gunicorn -w 4 -b 0.0.0.0:21389 dcbc.app:app > dcbc/gunicorn.log 2>&1 &
+exec gunicorn -w 4 -b 0.0.0.0:21389 dcbc.app:app > dcbc/gunicorn.log 2>&1

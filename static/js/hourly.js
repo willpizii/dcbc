@@ -16,19 +16,20 @@ function populateWeeklyHours(startDate) {
     const hours = Array.from({ length: 13 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`); // Hours from 6 AM to 6 PM
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-    // Convert startDate to a Date object using the parseDateString function
-    const start = parseDateString(startDate);
+    const [day, month, year] = startDate.split('/').map(Number);
+
+    // Create a new UTC date with the parsed values
+    const start = new Date(Date.UTC(year, month - 1, day)); // Forces it to UTC at midnight
 
     // Create the header row (days across the top)
     let headerRow = '<tr><th></th>'; // Start with an empty cell for the top-left corner
     for (let i = 0; i < days.length; i++) {
-        // Create a new date for the current day
-        const currentDay = new Date(start);
-        currentDay.setDate(start.getDate() + i); // Increment the date
+        // Create the UTC date for each day by adding i days to the start date
+        const currentDay = new Date(start.getTime() + i * 24 * 60 * 60 * 1000); // Adds days in UTC milliseconds
 
-        // Format the header as DD/MM
-        const dayFormatted = String(currentDay.getDate()).padStart(2, '0');
-        const monthFormatted = String(currentDay.getMonth() + 1).padStart(2, '0'); // Months are 0-based
+        // Format the header as DD/MM using UTC methods
+        const dayFormatted = String(currentDay.getUTCDate()).padStart(2, '0');
+        const monthFormatted = String(currentDay.getUTCMonth() + 1).padStart(2, '0'); // Months are 0-based
 
         // Add each day of the week to the header
         headerRow += `<th>${days[i].slice(0, 3)} ${dayFormatted}/${monthFormatted}</th>`;
@@ -41,9 +42,8 @@ function populateWeeklyHours(startDate) {
         let row = `<tr><th>${hour}</th>`; // Each row starts with the hour
 
         for (let i = 0; i < days.length; i++) {
-            // Create a new date for the current day
-            const currentDay = new Date(start);
-            currentDay.setDate(start.getDate() + i); // Increment the date
+            // Create the UTC date for each day by adding i days to the start date
+            const currentDay = new Date(start.getTime() + i * 24 * 60 * 60 * 1000); // Adds days in UTC milliseconds
 
             // Format the date as YYYY-MM-DD for the data attributes
             const dateString = currentDay.toISOString().split('T')[0];
@@ -64,13 +64,6 @@ document.getElementById('weekSelector').addEventListener('change', function () {
     populateWeeklyHours(selectedStartDate); // Repopulate the calendar
 });
 
-// Event listener for the weekSelector to repopulate the table when changed
-document.getElementById('weekSelector').addEventListener('change', function () {
-    const selectedStartDate = this.value; // Get the new Monday date
-    populateWeeklyHours(selectedStartDate); // Repopulate the calendar
-});
-
-
 populateWeeklyHours(document.getElementById('weekSelector').value);
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -90,8 +83,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Function to update table based on week selection
     function initializeTable() {
-
-        console.log(existingData);
 
         if (!existingData  || (typeof existingData === 'object' && Object.keys(existingData).length === 0)) {
             console.warn(`No data found, setting all cells to available.`);
@@ -133,6 +124,73 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     initializeTable();
+
+    document.getElementById('copyPreviousWeek').addEventListener('click', function () {
+        const currentStartDate = parseDateString(weekSelector.value); // Get the current week's start date
+        const previousWeekStartDate = new Date(currentStartDate);
+        previousWeekStartDate.setDate(currentStartDate.getDate() - 7); // Get the start date of the previous week
+
+        const prevWeekData = {}; // Will store states for the previous week
+
+        // First, gather the previous week's data from the table cells
+        document.querySelectorAll('td[data-date]').forEach(cell => {
+            const cellDate = new Date(cell.dataset.date);
+            if (cellDate >= previousWeekStartDate && cellDate < currentStartDate) {
+                const formattedDate = cellDate.toISOString().split('T')[0];
+                prevWeekData[formattedDate] = markedCells.get(formattedDate); // Store the cell's state
+            }
+        });
+
+        const weekData = existingData;
+
+        document.querySelectorAll('td[data-date]').forEach(cell => {
+            const date = cell.dataset.date; // Get the date from data-date attribute
+
+            // Separate the full date part (YYYY-MM-DD) and time part (HH:MM)
+            const datePart = date.slice(0, 10); // 'YYYY-MM-DD'
+            const timePart = date.slice(11); // 'HH:MM'
+
+            // Parse the date part and time part as individual integers
+            const [year, month, day] = datePart.split('-').map(Number);
+            const [hour, minute] = timePart.split(':').map(Number);
+
+            // Create the current date using UTC to avoid time zone issues
+            const currentDate = new Date(Date.UTC(year, month - 1, day, hour, minute)); // month is 0-based
+
+            // Store the original day before subtracting a week
+            const originalUTCDate = new Date(currentDate);
+
+            currentDate.setUTCDate(currentDate.getUTCDate() - 7);
+
+            // Format the date as 'YYYY-MM-DD-HH:MM' using UTC methods
+            const newYear = currentDate.getUTCFullYear();
+            const newMonth = String(currentDate.getUTCMonth() + 1).padStart(2, '0'); // Months are 0-based
+            const newDay = String(currentDate.getUTCDate()).padStart(2, '0');
+            const newHours = String(currentDate.getUTCHours()).padStart(2, '0');
+            const newMinutes = String(currentDate.getUTCMinutes()).padStart(2, '0');
+
+            const previousWeekDate = `${newYear}-${newMonth}-${newDay}-${newHours}:${newMinutes}`;
+
+            // Determine the cell's state based on existing data
+            let currentState = 'available'; // Default state
+
+            if (weekData['available'] && weekData['available'].includes(previousWeekDate)) {
+                currentState = 'available';
+            } else if (weekData['not-available'] && weekData['not-available'].includes(previousWeekDate)) {
+                currentState = 'not-available';
+            } else if (weekData['if-required'] && weekData['if-required'].includes(previousWeekDate)) {
+                currentState = 'if-required';
+            } else if (weekData['out-of-cam'] && weekData['out-of-cam'].includes(previousWeekDate)) {
+                currentState = 'out-of-cam';
+            }
+
+
+            // Apply the determined state
+            markedCells.set(date, currentState);
+            cell.classList.remove('available', 'not-available', 'if-required', 'out-of-cam');
+            cell.classList.add(currentState);
+        });
+    });
 
     weekSelector.addEventListener('change', function() {
         markedCells.clear(); // Prevent submission of prior months which will wipe notes

@@ -16,3 +16,4 @@ class Workout(Base):
     avghr = Column(Integer)
     comments = Column(String(65535))
     stroke_data = Column(Boolean)
+    rest_time = Column(Integer)

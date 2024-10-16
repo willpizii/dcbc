@@ -166,6 +166,10 @@ def shutdown_session(exception=None):
         session.rollback()
     session.remove()
 
+@app.errorhandler(403) # Raven seems to fail redirect sometimes, this might mitigate it
+def forbidden_error(error):
+    return redirect(url_for('login'))
+
 # Redirect 404 requests (should handle this better?)
 @app.route('/<path:path>')
 def catch_all(path):
@@ -611,7 +615,6 @@ def authorize():
 @app.route(f'/callback')
 def callback():
     code = unquote(request.args.get('code')).strip()
-    print(f"Received code: {repr(code)}")
     if not code:
         return 'No authorization code received.'
 
@@ -626,8 +629,6 @@ def callback():
     response = requests.post(TOKEN_URL, data=token_params)
 
     token_data = response.json()
-
-    print(token_data)
 
     if 'access_token' not in token_data:
         return (f"Error - Expected access token, got invalid response")
@@ -786,7 +787,8 @@ def load_all():
             "spm": workout_data.get("stroke_rate", None),
             "avghr": workout_data.get("heart_rate", {}).get("average", None),
             "comments": workout_data.get("comments", None),    # If missing, default to None
-            "stroke_data": workout_data.get("stroke_data", False)
+            "stroke_data": workout_data.get("stroke_data", False),
+            "rest_time": workout_data.get("rest_time", 0)
         }
 
         # Convert date string to datetime object if it's not None
@@ -830,7 +832,8 @@ def webhook():
                 "spm": workout_data.get("stroke_rate", None),
                 "avghr": workout_data.get("heart_rate", {}).get("average", None),
                 "comments": workout_data.get("comments", None),    # If missing, default to None
-                "stroke_data": workout_data.get("stroke_data", False)
+                "stroke_data": workout_data.get("stroke_data", False),
+                "rest_time": workout_data.get("rest_time", 0)
             }
 
             # Convert date string to datetime object if it's not None
@@ -856,7 +859,6 @@ def webhook():
         return "Result updated", 200
 
     else:
-        print("Received non-JSON Payload")
         return "Invalid content type", 400
 
 # Updated to SQL! Errors might need testing
@@ -2145,7 +2147,7 @@ def group_ergs():
                 'type': erg_dict['type'],
                 'date': erg_dict['date'],
                 'split': format_seconds(round((erg_dict['time'] / 10) / (erg_dict ['distance'] / 500),1)),
-                'time': format_seconds(erg_dict['time'] / 10) if 'time' in erg_dict else '',
+                'time': format_seconds((erg_dict['time'] - erg_dict["rest_time"]) / 10) if 'time' in erg_dict else '',
                 'distance': erg_dict['distance'],
                 'avghr': erg_dict['avghr'],
                 'workout_type': erg_dict['workout_type'],
