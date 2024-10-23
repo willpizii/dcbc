@@ -566,6 +566,11 @@ def scratch_outing():
 
     return "Outing not found", 404
 
+@captains_bp.route('/outings/land', methods=['GET', 'POST'])
+def land_session():
+    # TODO implement this!
+    return None
+
 @captains_bp.route('/group_calendar', methods=['GET', 'POST'])
 def group_calendar():
 

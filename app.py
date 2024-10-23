@@ -1449,6 +1449,7 @@ def pbs():
 
     two_ks = df[(df['workout_type'] == 'FixedDistanceSplits') & (df['distance'] == 2000)]
     five_ks = df[(df['workout_type'] == 'FixedDistanceSplits') & (df['distance'] == 5000)]
+    thrtws = df[(df['workout_type'] == 'FixedTimeSplits') & (df['time'] == 18000) & (df['spm'] <= 21)]
 
     if not two_ks.empty:
 
@@ -1470,7 +1471,7 @@ def pbs():
         p1.line(
             x=pb_twos['date'],
             y=pb_twos['time']/10,
-            color='magenta',
+            color='#bb0088',
             alpha=0.8,
             line_width=3)
 
@@ -1505,7 +1506,7 @@ def pbs():
         p2.line(
             x=pb_fives['date'],
             y=pb_fives['time']/10,
-            color='magenta',
+            color='#bb0088',
             alpha=0.8,
             line_width=3)
 
@@ -1521,11 +1522,41 @@ def pbs():
         script2 = ''
         div2 = 'Log a 5K to see your PBs!'
 
+    if not thrtws.empty:
+
+        p3 = figure(height=350, sizing_mode='stretch_width', x_axis_type='datetime')
+
+        # Plot the second dataset on the right y-axis
+        p3.scatter(
+            x=thrtws['date'],
+            y=thrtws['distance'],
+            color='black',
+            alpha=0.8)
+
+        dist_array = thrtws['distance'].values
+        keep_indices = np.where(dist_array == np.maximum.accumulate(dist_array))[0]
+
+        # Slice the DataFrame
+        pb_thrtws = thrtws.iloc[keep_indices].copy()
+
+        p3.line(
+            x=pb_thrtws['date'],
+            y=pb_thrtws['distance'],
+            color='#bb0088',
+            alpha=0.8,
+            line_width=3)
+
+        script3, div3 = components(p3)
+
+    else:
+        script3 = ''
+        div3 = 'Log a 30r20 to see your PBs!'
+
     return(render_template(
         template_name_or_list='pbs.html',
-        script=[script1, script2],
-        div=[div1, div2],
-        two_ks = two_ks, five_ks = five_ks,
+        script=[script1, script2, script3],
+        div=[div1, div2, div3],
+        two_ks = two_ks, five_ks = five_ks, thrtws = thrtws,
         club = url_for('club'), home = url_for('index'), data_url = url_for('data'), plot=url_for('plot')))
 
 @app.route('/commit_crews', methods=['POST'])
@@ -2146,8 +2177,8 @@ def group_ergs():
                 'user_id': log_names.get(erg_dict['user_id'], erg_dict['user_id']),
                 'type': erg_dict['type'],
                 'date': erg_dict['date'],
-                'split': format_seconds(round((erg_dict['time'] / 10) / (erg_dict ['distance'] / 500),1)),
-                'time': format_seconds((erg_dict['time'] - erg_dict["rest_time"]) / 10) if 'time' in erg_dict else '',
+                'split': format_seconds(round(((erg_dict['time']) / 10) / (erg_dict ['distance'] / 500),1)),
+                'time': format_seconds(erg_dict['time'] / 10) if 'time' in erg_dict else '',
                 'distance': erg_dict['distance'],
                 'avghr': erg_dict['avghr'],
                 'workout_type': erg_dict['workout_type'],

@@ -26,6 +26,12 @@
 
 <div class="container-fluid  py-4 px-4">
     <div class="row row-cols-1 row-cols-lg-4 g-3">
+        <div class="col d-flex justify-content-center" hidden>
+            <input class="btn-check btn-outline-secondary me-2" type="radio" id="allOutingsCheck" name="myOutingsCheck" />
+            <label class="btn me-2" for="allOutingsCheck">All Outings</label>
+            <input class="btn-check btn-outline-primary" type="radio" id="myOutingsCheck" name="myOutingsCheck" checked />
+            <label class="btn" for="myOutingsCheck">My Outings</label>
+        </div>
         <div class="col">
             <div class="input-group">
                 <div for="fromDateBox" class="input-group-text">Week of:</div>
