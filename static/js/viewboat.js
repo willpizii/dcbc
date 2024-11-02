@@ -16,12 +16,8 @@ const boatsData = {
     'pair': ['stroke', 'bow']
 };
 
-const defaultSide = {
-    'eight': ['cox', 'stroke', 'bow', 'stroke', 'bow', 'stroke', 'bow', 'stroke', 'bow'],
-    'coxed-four': ['cox', 'stroke', 'bow', 'stroke', 'bow'],
-    'coxless-four': ['stroke', 'bow', 'stroke', 'bow'],
-    'pair': ['stroke', 'bow']
-};
+const sides = JSON.parse(window.sides);
+console.log("Type of sides:", typeof sides);
 
 const boatsList = window.boatsList;
 
@@ -31,7 +27,7 @@ function filter() {
     const boatType = document.getElementById('boatType').value;
 
     const positions = boatsData[boatType]; // Get the positions for the selected boat type
-    const defSides = defaultSide[boatType]; // Get the positions for the selected boat type
+
     const tableBody = document.getElementById('userTableBody');
 
     // Clear existing rows
@@ -39,7 +35,10 @@ function filter() {
 
     // Add rows for the selected boat type
     positions.forEach((position, index) => {
-        const side = defSides[index]; // Get the default side for this position
+
+        const side = sides[position] || 'unknown';
+
+        // Get the default side for this position
         const row = document.createElement('tr');
 
         // Create the select element for assigning users
@@ -51,7 +50,7 @@ function filter() {
             row.innerHTML = `
                 <td>${position}</td>
                 <td>
-                    <input type="text" class="form-control" value="cox" name="side-${position}" readonly disabled/>
+                    <input type="text" class="form-control" value="Cox" name="side-${position}" readonly disabled/>
                 </td>
                 <td><div class="d-flex">
                     <input type="text" class="form-control row-select me-2" id="seat-${position}" name="seat-${position}" disabled>
@@ -61,7 +60,7 @@ function filter() {
             row.innerHTML = `
                 <td>${position}</td>
                 <td>
-                    <input id="switchSide" class="form-control" name="side-${position}" disabled value="${side === 'stroke' ? 'stroke' : 'bow'}" />
+                    <input id="switchSide" class="form-control" name="side-${position}" disabled value="${side === 'stroke' ? 'Stroke' : 'Bow'}" />
                 </td>
                 <td><div class="d-flex">
                     <input type="text" class="form-control row-select me-2" id="seat-${position}" name="seat-${position}" disabled>

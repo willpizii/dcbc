@@ -94,9 +94,14 @@ app.wsgi_app = ProxyFix(
 # Change the before_request behaviour to vary per request
 @app.before_request
 def check_authentication():
+    # Skip authentication check for specified paths
     if request.path.startswith('/static/') or request.path.startswith('/coach') or request.path in ['/coach', '/favicon.ico', '/webhook']:
-        return None  # Do not require a raven login for the above
-    return auth_decorator.before_request()
+        return None
+
+    # Run the auth_decorator's before_request checks
+    auth_response = auth_decorator.before_request()
+    if auth_response:  # If there's an auth-related response, return it
+        return auth_response
 
 @app.context_processor
 def inject_superuser():
@@ -169,6 +174,13 @@ def shutdown_session(exception=None):
 @app.errorhandler(403) # Raven seems to fail redirect sometimes, this might mitigate it
 def forbidden_error(error):
     return redirect(url_for('login'))
+
+@app.errorhandler(500)  # You could choose a different status code if necessary
+def user_not_found(e):
+    crsid = auth_decorator.principal
+    if not session.execute(select(exists().where(User.crsid == crsid))).scalar():
+        return redirect(url_for('setup'))
+    return e  # Return the original error if user exists or if it's not a user-not-found issue
 
 # Redirect 404 requests (should handle this better?)
 @app.route('/<path:path>')
@@ -1829,6 +1841,8 @@ def view_boat():
             boats = session.execute(select(Boat).where(Boat.name == boat_name)).scalars().all()
 
             for row in boats:
+                sides = row.layout
+
                 boats_list.update({
                         'name': row.name,
                         'cox': row.cox if row.cox else None,
@@ -1846,7 +1860,7 @@ def view_boat():
 
     user_crsids = {str(user.crsid):str(user.preferred_name+' '+user.last_name) for user in session.execute(select(User)).scalars().all()}
 
-    return(render_template('viewboat.html', boats_list = boats_list, user_list = user_crsids)) # temp
+    return(render_template('viewboat.html', boats_list = boats_list, user_list = user_crsids, sides=sides)) # temp
 
 @app.route('/get_boat_info', methods=['POST'])
 def get_boat_info():
