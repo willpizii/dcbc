@@ -6,3 +6,4 @@ availability.json
 *.log
 
 !data/.gitkeep
+*.out

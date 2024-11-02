@@ -7,4 +7,6 @@ source /societies/downingboatclub/Prod/bin/activate
 cd ..
 
 # Start Gunicorn from the parent directory
-exec /societies/downingboatclub/Prod/bin/gunicorn -w 4 -b 0.0.0.0:21389 dcbc.app:app > dcbc/gunicorn.log 2>&1
+python -m dcbc.daily_refresh
+
+deactivate

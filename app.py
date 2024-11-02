@@ -64,15 +64,17 @@ from dcbc.routes.captains import captains_bp
 from dcbc.routes.coaches import coach_bp
 
 class R(flask.Request):
-    trusted_hosts = {'wp280.user.srcf.net'}
+    trusted_hosts = {'downingboatclub.soc.srcf.net', 'row.downingboatclub.co.uk', 'www.row.downingboatclub.co.uk'}
 
 app = Flask(__name__)
 app.request_class = R
 
 # Allow CORS for all subdomains of trusteddomain.com
 CORS(app, resources={r"/*": {"origins": [
-    r"http://wp280.user.srcf.net",
-    r"https://wp280.user.srcf.net",
+    r"http://downingboatclub.soc.srcf.net",
+    r"https://downingboatclub.soc.srcf.net",
+    r"http://row.downingboatclub.co.uk",
+    r"https://row.downingboatclub.co.uk"
     r"http://*.concept2.com",
     r"https://*.concept2.com"
 ]}})
@@ -80,11 +82,11 @@ CORS(app, resources={r"/*": {"origins": [
 Base.metadata.create_all(engine)
 session.commit()
 
-# Comment these for live deployment
 app.register_blueprint(captains_bp)
 app.register_blueprint(coach_bp)
 
-app.config['SERVER_NAME'] = 'wp280.user.srcf.net'
+# Commented to allow access from custom urls
+# app.config['SERVER_NAME'] = 'downingboatclub.soc.srcf.net'
 app.config['SESSION_COOKIE_NAME'] = 'cookie_session'
 
 app.wsgi_app = ProxyFix(
@@ -94,9 +96,14 @@ app.wsgi_app = ProxyFix(
 # Change the before_request behaviour to vary per request
 @app.before_request
 def check_authentication():
+    # Skip authentication check for specified paths
     if request.path.startswith('/static/') or request.path.startswith('/coach') or request.path in ['/coach', '/favicon.ico', '/webhook']:
-        return None  # Do not require a raven login for the above
-    return auth_decorator.before_request()
+        return None
+
+    # Run the auth_decorator's before_request checks
+    auth_response = auth_decorator.before_request()
+    if auth_response:  # If there's an auth-related response, return it
+        return auth_response
 
 @app.context_processor
 def inject_superuser():
@@ -119,7 +126,7 @@ authusers, superusers = load_users(authusers_file, superusers_file)
 app.secret_key = secrets.get('secret_key')
 
 # Callback URI after authorization on Concept2
-REDIRECT_URI = 'https://wp280.user.srcf.net/callback'
+REDIRECT_URI = 'https://downingboatclub.soc.srcf.net/callback'
 
 # Authorization URL
 AUTH_URL = 'https://log.concept2.com/oauth/authorize'
@@ -169,6 +176,17 @@ def shutdown_session(exception=None):
 @app.errorhandler(403) # Raven seems to fail redirect sometimes, this might mitigate it
 def forbidden_error(error):
     return redirect(url_for('login'))
+
+@app.errorhandler(404) # temporary, should have a proper 404 handler
+def not_found(error):
+    return redirect(url_for('login'))
+
+@app.errorhandler(500)  # You could choose a different status code if necessary
+def user_not_found(e):
+    crsid = auth_decorator.principal
+    if not session.execute(select(exists().where(User.crsid == crsid))).scalar():
+        return redirect(url_for('setup'))
+    return e  # Return the original error if user exists or if it's not a user-not-found issue
 
 # Redirect 404 requests (should handle this better?)
 @app.route('/<path:path>')
@@ -1829,6 +1847,8 @@ def view_boat():
             boats = session.execute(select(Boat).where(Boat.name == boat_name)).scalars().all()
 
             for row in boats:
+                sides = row.layout
+
                 boats_list.update({
                         'name': row.name,
                         'cox': row.cox if row.cox else None,
@@ -1846,7 +1866,7 @@ def view_boat():
 
     user_crsids = {str(user.crsid):str(user.preferred_name+' '+user.last_name) for user in session.execute(select(User)).scalars().all()}
 
-    return(render_template('viewboat.html', boats_list = boats_list, user_list = user_crsids)) # temp
+    return(render_template('viewboat.html', boats_list = boats_list, user_list = user_crsids, sides=sides)) # temp
 
 @app.route('/get_boat_info', methods=['POST'])
 def get_boat_info():

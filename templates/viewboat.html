@@ -28,12 +28,12 @@ select.form-select option.disabled-option {
             <input id="boat_name" class="form-control" name="boat_shell" value="{{ boats_list.shell }}" disabled></input>
         </div>
     </div>
-    <table class="table table-bordered table-hover table-striped">
+    <table class="table table-bordered table-striped">
         <thead>
             <tr>
-                <th scope="col" width="10%" style="min-width:80px;">Seat</th>
-                <th scope="col" width="10%" style="min-width:80px;">Side</th>
-                <th scope="col" width="60%" min-width="100px">Name</th>
+                <th scope="col" width="2.5%" style="min-width:80px;">Seat</th>
+                <th scope="col" width="1%" style="min-width:100px;">Side</th>
+                <th scope="col" width="30%" min-width="100px">Name</th>
             </tr>
         </thead>
         <tbody id="userTableBody">
@@ -46,6 +46,7 @@ select.form-select option.disabled-option {
 <script>
     window.boatsList = {{ boats_list | tojson }};
     window.user_list = {{ user_list | tojson }};
+    window.sides = {{ sides | tojson }};
     window.selectedType = "{{ boats_list.crew_type | default('eight') }}";
 </script>
 <script src="{{ url_for('static', filename='js/viewboat.js') }}"></script>

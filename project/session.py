@@ -18,7 +18,7 @@ SQL_PASS = secrets_dict.get('sql_pass')
 
 # Create the SQLAlchemy engine
 engine = create_engine(
-    f'mysql+pymysql://wp280:{SQL_PASS}@squirrel/wp280',
+    f'mysql+pymysql://downingboatclub:{SQL_PASS}@squirrel/downingboatclub',
     pool_recycle=3600,
     poolclass=QueuePool
 )
