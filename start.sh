@@ -3,6 +3,8 @@
 # Activate the virtual environment
 source /societies/downingboatclub/Prod/bin/activate
 
+source /societies/downingboatclub/pass.sh
+
 # Change to the parent directory
 cd ..
 

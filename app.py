@@ -1343,7 +1343,7 @@ def club():
     for crsid in crsids:
         logid = session.execute(select(User.logbookid).where(User.crsid == crsid)).scalar()
 
-        query = select(Workout).where(Workout.user_id == logid, Workout.type == "rower")
+        query = select(Workout).where(Workout.user_id == logid, Workout.type.in_(["rower", "dynamic", "slides"]))
 
         userdf = pd.read_sql(query, engine)
 
@@ -2149,6 +2149,133 @@ def outings():
     week_lighting = lighting[mask].to_dict(orient='records')
 
     return(render_template("outings.html", fromDate = from_date, toDate = to_date, crsid=crsid, user_outings = your_outings, other_outings=other_outings, sub_outings= sub_outings, races = races_events, lightings = week_lighting))
+
+@app.route('/outings_summary', methods=['GET', 'POST'])
+def outings_summary():
+
+    if 'weekof' in request.args:
+
+        week_date = datetime.strptime(request.args.get('weekof'), '%Y-%m-%d').date()
+        from_date = datetime.combine(week_date - timedelta(days=week_date.weekday()), datetime.min.time())
+
+        # Calculate the end of the week (Sunday) at 23:59:59
+        to_date = datetime.combine(from_date + timedelta(days=6), datetime.max.time())
+
+
+    else:
+        # Get today's date
+        today = datetime.today()
+
+        # Calculate the start of the week (Monday)
+        from_date = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
+
+        # Calculate the end of the week (Sunday)
+        to_date = datetime.combine(from_date + timedelta(days=6), datetime.max.time())
+
+    crsid = auth_decorator.principal
+
+    result = session.execute(select(User.boats).where(User.crsid == crsid)).scalar()
+
+    # Safely handle the case where the result is None
+    boats = result.split(",") if result else []
+
+    user_name = session.execute(select(User.preferred_name).where(User.crsid == crsid)).scalar() + ' ' + session.execute(select(User.last_name).where(User.crsid == crsid)).scalar()
+
+    all_outings = session.execute(
+        select(Outing).where(
+            and_(
+                Outing.date_time >= from_date,
+                Outing.date_time <= to_date,
+            )
+        ).order_by(Outing.date_time.asc())
+    ).scalars().all()
+
+    all_outings = [
+        outing for outing in all_outings  # Check for None and key presence
+    ]
+
+    races_events = session.execute(select(Event).where(
+            and_(
+                    Event.date >= from_date,
+                    Event.date <= to_date
+                )
+        ).order_by(Event.date.asc())).scalars().all()
+
+    races_events = [{
+        "name": race_event.name,
+        "date": race_event.date,
+        "crews": race_event.crews,
+        "type": race_event.type
+    } for race_event in races_events]
+
+    lighting = pd.read_csv('dcbc/data/lightings.csv')
+
+    lighting['Date'] = pd.to_datetime(lighting['Date'], format='%Y%m%d')
+
+    mask = (lighting['Date'] >= from_date) & (lighting['Date'] <= to_date)
+
+    week_lighting = lighting[mask].to_dict(orient='records')
+
+    outings_crews = {}
+
+    for outing in all_outings:
+
+        out_id = outing.outing_id
+
+        outing_info = session.execute(select(Outing).where(Outing.outing_id == out_id)).scalars().first()
+
+        pos_seats = ['cox', 'stroke', 'seven', 'six', 'five', 'four', 'three', 'two', 'bow']
+
+        if outing_info.scratch:
+
+            scratch_crew = json.loads(outing_info.set_crew)
+
+            for seat, rower in scratch_crew.items():
+                # Retrieve the user associated with the rower
+                user = session.execute(select(User).where(User.crsid == rower)).scalars().first()
+
+                # If user exists, update the seat with their formatted name
+                if user:
+                    scratch_crew[seat] = f"{user.preferred_name} {user.last_name}"
+
+            outings_crews[out_id] = scratch_crew
+            continue
+
+        outing_crew = session.execute(select(Boat).where(Boat.name == outing_info.boat_name)).scalars().first()
+
+        crew_dict = {pos: getattr(outing_crew, pos) for pos in pos_seats if getattr(outing_crew, pos) is not None}
+
+        if outing_info.set_crew is not None:
+            to_sub = json.loads(outing_info.set_crew)
+
+            for subbed, sub in to_sub.items():
+                matched_seat = next((k for k, v in crew_dict.items() if v == subbed), None)
+
+                if matched_seat:
+                    crew_dict[matched_seat] = sub
+
+        for seat, rower in crew_dict.items():
+            # Retrieve the user associated with the rower
+            user = session.execute(select(User).where(User.crsid == rower)).scalars().first()
+
+            # If user exists, update the seat with their formatted name
+            if user:
+                crew_dict[seat] = f"{user.preferred_name} {user.last_name}"
+
+        outings_crews[out_id] = crew_dict
+
+    all_outings = [{
+        "outing_id": outing.outing_id,
+        "date_time": outing.date_time.isoformat(),
+        "boat_name": outing.boat_name,
+        "set_crew": outing.set_crew,
+        "coach": outing.coach if outing.coach else 'No Coach',
+        "time_type": outing.time_type if outing.time_type else 'ATBH',
+        'notes': outing.notes if outing.notes else None,
+        'crew': outings_crews[outing.outing_id]
+    } for outing in all_outings]
+
+    return(render_template_string(f"{all_outings}", fromDate = from_date, toDate = to_date, crsid=crsid, outings = all_outings, races = races_events, lightings = week_lighting, crews=outings_crews))
 
 @app.route('/ergtable', methods=['GET', 'POST'])
 def group_ergs():

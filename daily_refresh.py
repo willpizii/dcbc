@@ -45,15 +45,23 @@ for workoutid in workout_datas:
         with open(token_path, 'rb') as file:
             encrypted_data = file.read()
         token_data = json.loads(datacipher.decrypt(encrypted_data).decode())
-        access_token = token_data['access_token']
-        refresh_token = token_data['refresh_token']
+        try:
+            access_token = token_data['access_token']
+            refresh_token = token_data['refresh_token']
+        except:
+            print(token_data,crsid)
+            continue
     else:
         raise FileNotFoundError("Token file not found.")
 
     # Make request to API
     data_headers = {'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}
     response = requests.get(data_url, headers=data_headers)
-    dataresponse = response.json()
+    try:
+        dataresponse = response.json()
+    except:
+       print(response)
+       continue
 
     # Refresh token if necessary
     if 'data' not in dataresponse:

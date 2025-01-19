@@ -34,8 +34,19 @@
                 <div class="collapse navbar-collapse" id="navbarNav">
                     <ul class="navbar-nav ms-auto">
                         {% if superuser %}
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('captains.home') }}"><b>Captains</b></a>
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <strong>Captains</strong>
+                                </a>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="{{ url_for('captains.set_outings') }}">Outings</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('captains.set_boats') }}">Boats</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('captains.races') }}">Races</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('captains.group_calendar') }}">Availability</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('captains.home') }}">Rowers</a></li>
+                                </ul>
+                            </li>
                             </li>
                         {% endif %}
                         <li class="nav-item dropdown">
