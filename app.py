@@ -2101,7 +2101,7 @@ def outings():
         "date_time": outing.date_time.isoformat(),
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
-        "coach": outing.coach if outing.coach else 'No Coach',
+        "coach": outing.coach if outing.coach else None,
         "time_type": outing.time_type if outing.time_type else 'ATBH',
         'notes': outing.notes if outing.notes else None
     } for outing in your_outings]
@@ -2111,7 +2111,7 @@ def outings():
         "date_time": outing.date_time.isoformat(),
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
-        "coach": outing.coach if outing.coach else 'No Coach',
+        "coach": outing.coach if outing.coach else None,
         "time_type": outing.time_type if outing.time_type else 'ATBH',
         'notes': outing.notes if outing.notes else None
     } for outing in sub_outings]
@@ -2121,7 +2121,7 @@ def outings():
         "date_time": outing.date_time.isoformat(),
         "boat_name": outing.boat_name,
         "set_crew": outing.set_crew,
-        "coach": outing.coach if outing.coach else 'No Coach',
+        "coach": outing.coach if outing.coach else None,
         "time_type": outing.time_type if outing.time_type else 'ATBH',
         'notes': outing.notes if outing.notes else None
     } for outing in other_outings]

@@ -148,7 +148,7 @@ dayNames.forEach((day, index) => {
                     <div class="card-body">
                         <table style="width: 100%; border-collapse: collapse; text-align: left;">
                             <tr><td><strong>Crew:</strong></td><td>${outing.boat_name}</td></tr>
-                            <tr><td><strong>Coach:</strong></td><td>${outing.coach}</td></tr>
+                            ${outing.coach ? `<tr><td><strong>Coach:</strong></td><td>${outing.coach}</td></tr>` : ''}
                             ${outing.notes ? `<tr><td><strong>Notes:</strong></td><td>${outing.notes}</td></tr>` : ''}
                         </table>
                     </div>
