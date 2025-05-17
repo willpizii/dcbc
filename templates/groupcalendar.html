@@ -22,6 +22,12 @@
     .Nodata {
         background-color: #969696;
     }
+    #availabilityTable th {
+        position: sticky;
+        top: 0;
+        background: #fff;
+        z-index: 2;
+    }
 </style>
 
 <div class='container-fluid py-4 px-4'>
@@ -43,7 +49,13 @@
         </div>
         <div class="col-md-3">
             <select id="crewFilter" class="form-select mb-2" onchange="filter()">
-                <option value="all">All Crews</option>
+                {% if captainview %}
+                    <option value="all">All Crews</option>
+                {% else %}
+                    {% if not boats %}
+                        <option value="None">---</option>
+                    {% endif %}
+                {% endif %}
                 {% for boat in boats %}
                     <option value="{{ boat }}">{{ boat }}</option>
                 {% endfor %}
@@ -51,8 +63,8 @@
         </div>
         <div class="col-md-3">
             <select id="modeSwitch" class="form-select mb-2" onchange="filter()">
-                <option value="daily">Daily</option>
                 <option value="hourly">Hourly</option>
+                <option value="daily">Daily</option>
             </select>
         </div>
     </div>
@@ -66,7 +78,19 @@
             <label for="end_date">End Date:</label>
             <input type="date" id="end_date" class="form-control"  onchange="filter()">
         </div>
+        <div class="col-md-3">
+            <button id="toggleEmptyCols" class="btn btn-secondary mb-2" onclick="toggleEmptyColumns()" data-hidden="false">
+                Hide Empty Users
+            </button>
+        </div>
+
+        <div class="col-md-3">
+            <button id="resetCols" class="btn btn-secondary mb-2" onclick="resetColumns()">Reset Columns</button>
+        </div>
     </div>
+
+
+
 
     <table id="availabilityTable" class="table table-bordered table-hover">
 

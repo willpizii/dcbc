@@ -13,7 +13,7 @@ function populateWeeklyHours(startDate) {
     calendarBody.innerHTML = '';
 
     // Define hours and days
-    const hours = Array.from({ length: 13 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`); // Hours from 6 AM to 6 PM
+    const hours = Array.from({ length: 15 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`); // Hours from 6 AM to 6 PM
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
     const [day, month, year] = startDate.split('/').map(Number);
@@ -349,5 +349,46 @@ document.addEventListener('DOMContentLoaded', function () {
         hiddenInputs.forEach(function(input) {
             input.type = isVisible ? 'hidden' : 'text';  // Change the input type accordingly
         });
+    });
+
+    let initialMarkedState = new Map(markedCells);
+    let initialNotes = {};
+
+    document.querySelectorAll('input.note-input').forEach(input => {
+        initialNotes[input.name] = input.value;
+    });
+
+    function handleBeforeUnload(e) {
+        let changed = false;
+
+        if (initialMarkedState.size !== markedCells.size) {
+            changed = true;
+        } else {
+            for (let [key, val] of markedCells.entries()) {
+                if (initialMarkedState.get(key) !== val) {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+
+        if (!changed) {
+            document.querySelectorAll('input.note-input').forEach(input => {
+                if ((initialNotes[input.name] || '') !== input.value) {
+                    changed = true;
+                }
+            });
+        }
+
+        if (changed) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    form.addEventListener('submit', function () {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
     });
 });

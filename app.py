@@ -2486,6 +2486,111 @@ def hourly_availability():
                            weeks=next_15_weeks,
                            week=selected_week)
 
+@app.route('/group_calendar', methods=['GET', 'POST'])
+def group_calendar_user():
+
+    if request.method == 'POST':
+
+        data = request.get_json()
+
+        squad = data.get('squad')
+        tag = data.get('tag')
+        crew = data.get('crew')
+        mode = data.get('mode')
+
+        # Start with a base select statement
+        stmt = select(User)
+
+        # Add filters conditionally if the value is not 'all'
+        conditions = []
+        if squad != 'all':
+            conditions.append(User.squad == squad)
+        if tag != 'all':
+            conditions.append(func.find_in_set(tag, User.tags))
+        if crew != 'all':
+            conditions.append(func.find_in_set(crew, User.boats))
+
+        # Apply filters if any exist
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+
+        # Execute the statement to get filtered users
+        result = session.execute(stmt).scalars().all()
+
+        # Build the users_list
+        users_list = [{'crsid': user.crsid, 'name': str(user.preferred_name + ' ' + user.last_name)} for user in result]
+
+        # Return both users_list and availability_data in the response
+        start_date = data.get('start_date', '')
+        end_date = data.get('end_date', '')
+
+        if not start_date or not end_date:  # Validate if both dates are provided
+            return jsonify({'error': 'Invalid date range'}), 400
+
+        if mode == 'daily':
+            # Query to get all records within the date range
+            results = session.execute(
+                select(Daily).where(Daily.date.between(start_date, end_date))
+            ).scalars().all()
+
+            if results:
+                # Prepare the response data by extracting date and user_data from each record
+                availability_data = [
+                    {'date': record.date, 'user_data': record.user_data} for record in results
+                ]
+
+                return jsonify({
+                    'users_list': users_list,
+                    'availability_data': availability_data
+                })
+
+        elif mode == 'hourly':
+            results = session.execute(
+                select(Hourly).where(Hourly.date.between(start_date, end_date))
+            ).scalars().all()
+
+            if results:
+                # Prepare the response data by extracting date and user_data from each record
+                availability_data = [
+                    {'date': record.date, 'user_data': record.user_data} for record in results
+                ]
+
+                return jsonify({
+                    'users_list': users_list,
+                    'availability_data': availability_data
+                })
+
+        else:
+            return jsonify({'error': 'No availability found for the given date range'}), 404
+
+    crsid = auth_decorator.principal
+
+    users = session.execute(select(User)).scalars().all()
+    unique_boats = set(row[0] for row in session.execute(select(Boat.name).where(Boat.active == True)).fetchall())
+
+    unique_tags = set()
+
+    result = session.execute(select(User.boats).where(User.crsid == crsid)).scalar()
+
+    # Safely handle the case where the result is None
+    boats = set(result.split(",") if result else [])
+
+    your_boats = {} # Stores seat information for the boats you are a member of
+
+    if boats:
+        boat_columns = inspect(Boat).columns.keys()
+        for boat in boats:
+            if boat in ['', None]:
+                continue
+            boat_row = session.execute(select(Boat).where(Boat.name == boat)).scalar()
+            if boat_row.active:
+                for column in boat_columns:
+                    if getattr(boat_row, column) == crsid:
+                        your_boats.update({boat:column})
+                        break
+
+    return(render_template('groupcalendar.html', captainview=False, tags=set(), boats=sorted(set(your_boats.keys()))))
+
 app.config.update(
     SESSION_COOKIE_SECURE=False,  # Ensure cookies are only sent over HTTPS
     SESSION_COOKIE_HTTPONLY=True, # Prevent JavaScript access to cookies

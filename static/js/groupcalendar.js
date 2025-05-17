@@ -75,14 +75,31 @@ function generateTable() {
     dateHeader.style.width = '200px';
     headerRow.appendChild(dateHeader);
 
-    // Add a column for each user
-    usersList.forEach(user => {
-        const userHeader = document.createElement('th');
-        userHeader.textContent = user.name;
-        headerRow.appendChild(userHeader);
-    });
+    // Add a column for each user, with an “×” button
+    usersList.forEach((user, i) => {
+        const th = document.createElement('th');
+        th.textContent = user.name;
+        th.style.position = 'sticky';
 
-    // Append the header row to the table
+        const btn = document.createElement('span');
+        btn.textContent = '×';
+        btn.style.position = 'absolute';
+        btn.style.top = '0';
+        btn.style.bottom = '0';
+        btn.style.right = '4px';
+        btn.style.width = '16px';
+        btn.style.display = 'flex';
+        btn.style.alignItems = 'center';
+        btn.style.justifyContent = 'center';
+        btn.style.cursor = 'pointer';
+        btn.style.fontSize = '0.75rem';
+        btn.style.lineHeight = '1';
+        btn.dataset.col = i + 1;
+        btn.onclick = () => hideColumn(Number(btn.dataset.col));
+
+        th.appendChild(btn);
+        headerRow.appendChild(th);
+    });
     table.appendChild(headerRow);
 
 
@@ -114,7 +131,7 @@ function generateTable() {
             const weekday = weekdays[date.getUTCDay()]; // Get the UTC weekday short string
 
             // Combine to the desired format: 'Weekday HH:MM DD MMM'
-            formattedDate = `${weekday} ${hours}:${minutes} ${day} ${month}`;
+            formattedDate = `${weekday} ${day} ${month} ${hours}:${minutes} `;
 
             // Check if the current UTC day is different from the previous UTC day
             const currentDay = date.getUTCDate(); // Get the current day in UTC
@@ -153,4 +170,55 @@ function generateTable() {
         // Append the row to the calendar body
         table.appendChild(row);
     });
+}
+
+function toggleEmptyColumns() {
+  const btn = document.getElementById('toggleEmptyCols');
+  const hide = btn.getAttribute('data-hidden') === 'false';
+  const table = document.getElementById('availabilityTable');
+  const headerCells = table.querySelectorAll('tr:first-child th');
+  const rows = Array.from(table.querySelectorAll('tr')).slice(1);
+
+  headerCells.forEach((th, colIndex) => {
+    if (colIndex === 0) return;
+
+    let shouldToggle = true;
+    if (hide) {
+      const dataRows = rows.filter(r => r.children.length > headerCells.length - 1);
+      shouldToggle = dataRows.every(row =>
+        row.children[colIndex].classList.contains('Nodata')
+      );
+    }
+
+    const display = hide && shouldToggle ? 'none' : '';
+    th.style.display = display;
+    rows.forEach(row => {
+      if (row.children[colIndex]) {
+        row.children[colIndex].style.display = display;
+      }
+    });
+  });
+
+  btn.textContent = hide ? 'Show Empty Users' : 'Hide Empty Users';
+  btn.setAttribute('data-hidden', hide ? 'true' : 'false');
+}
+
+function hideColumn(colIndex) {
+  const table = document.getElementById('availabilityTable');
+  const rows = table.querySelectorAll('tr');
+  rows.forEach(row => {
+    const cell = row.children[colIndex];
+    if (cell) cell.style.display = 'none';
+  });
+}
+
+function resetColumns() {
+  const table = document.getElementById('availabilityTable');
+  const rows = table.querySelectorAll('tr');
+  const maxCols = rows[0].children.length;
+  rows.forEach(row => {
+    for (let c = 0; c < maxCols; c++) {
+      if (row.children[c]) row.children[c].style.display = '';
+    }
+  });
 }

@@ -659,5 +659,5 @@ def group_calendar():
             for tag in tags:
                 unique_tags.add(tag.strip())
 
-    return(render_template('groupcalendar.html', tags=sorted(unique_tags), boats=sorted(unique_boats)))
+    return(render_template('groupcalendar.html', tags=sorted(unique_tags), boats=sorted(unique_boats), captainview=True))
 
